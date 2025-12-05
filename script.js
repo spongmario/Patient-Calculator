@@ -6,20 +6,65 @@ let shiftAssignments = {
     close: []
 };
 
+// Hard-coded base providers
+const BASE_PROVIDERS = [
+    { id: 1, name: 'Ryan', patientsPerHour: 2, submitted: true, isBase: true },
+    { id: 2, name: 'Lauren', patientsPerHour: 2, submitted: true, isBase: true },
+    { id: 3, name: 'Kristy', patientsPerHour: 1.8, submitted: true, isBase: true },
+    { id: 4, name: 'Johny', patientsPerHour: 1.9, submitted: true, isBase: true },
+    { id: 5, name: 'Mikaela', patientsPerHour: 2, submitted: true, isBase: true },
+    { id: 6, name: 'Dan', patientsPerHour: 1.8, submitted: true, isBase: true },
+    { id: 7, name: 'Nicole', patientsPerHour: 2.2, submitted: true, isBase: true }
+];
+
 // Load data from localStorage
 function loadData() {
     const savedProviders = localStorage.getItem('chcProviders');
     const savedAssignments = localStorage.getItem('chcShiftAssignments');
     
+    // Always start with base providers
+    providers = JSON.parse(JSON.stringify(BASE_PROVIDERS)); // Deep copy
+    
+    // Load additional providers from localStorage (temporary ones added by user)
     if (savedProviders) {
-        providers = JSON.parse(savedProviders);
-        // Ensure all providers have the submitted property
-        providers.forEach(provider => {
-            if (provider.submitted === undefined) {
-                provider.submitted = false;
+        const saved = JSON.parse(savedProviders);
+        const baseProviderIds = BASE_PROVIDERS.map(p => p.id);
+        
+        saved.forEach(provider => {
+            // Skip "test" provider
+            if (provider.name && provider.name.toLowerCase().trim() === 'test') {
+                return;
+            }
+            
+            // Check if this is a base provider by ID
+            const isBaseProvider = baseProviderIds.includes(provider.id);
+            
+            if (isBaseProvider) {
+                // Update base provider if it was edited (preserve edits but keep isBase flag)
+                const baseIndex = providers.findIndex(p => p.id === provider.id);
+                if (baseIndex !== -1) {
+                    provider.isBase = true; // Ensure isBase flag is set
+                    providers[baseIndex] = provider;
+                }
+            } else {
+                // It's a temporary provider, add it
+                providers.push(provider);
             }
         });
     }
+    
+    // Remove any "test" providers that might already be in the providers array
+    providers = providers.filter(p => !p.name || p.name.toLowerCase().trim() !== 'test');
+    
+    // Clean up localStorage by saving the filtered providers (removes test provider)
+    saveData();
+    
+    // Ensure all providers have the submitted property
+    providers.forEach(provider => {
+        if (provider.submitted === undefined) {
+            provider.submitted = false;
+        }
+    });
     
     if (savedAssignments) {
         shiftAssignments = JSON.parse(savedAssignments);
@@ -52,7 +97,8 @@ function addProviderRow(skipRender = false) {
         id: Date.now(),
         name: '',
         patientsPerHour: 0,
-        submitted: false
+        submitted: false,
+        isBase: false // Mark as temporary provider
     };
     providers.unshift(newProvider); // Add to beginning of array
     saveData();
@@ -149,25 +195,22 @@ function renderProviders(skipAutoAdd = false) {
     
     container.innerHTML = '';
     
-    if (providers.length === 0 && !skipAutoAdd) {
-        // Add one empty row by default
-        const newProvider = {
-            id: Date.now(),
-            name: '',
-            patientsPerHour: 0,
-            submitted: false
-        };
-        providers.unshift(newProvider);
-        saveData();
-        // Now render with the new provider
-        skipAutoAdd = true;
-    }
-    
+    // No need to auto-add empty row since we have base providers
     if (providers.length === 0) {
-        return; // Still no providers, nothing to render
+        return; // No providers to render
     }
     
-    providers.forEach(provider => {
+    // Sort providers: base providers first (in original order), then temporary ones
+    const sortedProviders = [...providers].sort((a, b) => {
+        const aIsBase = a.isBase || false;
+        const bIsBase = b.isBase || false;
+        if (aIsBase && !bIsBase) return -1;
+        if (!aIsBase && bIsBase) return 1;
+        if (aIsBase && bIsBase) return a.id - b.id; // Base providers in original order
+        return b.id - a.id; // Temporary providers: newest first
+    });
+    
+    sortedProviders.forEach(provider => {
         const providerRow = document.createElement('div');
         providerRow.className = `provider-row ${provider.submitted ? 'submitted' : ''}`;
         providerRow.setAttribute('data-provider-id', provider.id);
@@ -201,8 +244,6 @@ function renderProviders(skipAutoAdd = false) {
             }
             <button class="btn btn-small btn-danger" onclick="deleteProvider(${provider.id})">Delete</button>
         `;
-        // Append in order - since we use unshift(), newest providers are at index 0
-        // and will be appended first, appearing at the top
         container.appendChild(providerRow);
     });
 }
