@@ -372,22 +372,22 @@ function calculateRemainingHours(currentHour, currentMinute, shiftStart, shiftEn
 }
 
 // Calculate remaining patients for a provider
-// The last hour of the shift always yields 1.8 patients, regardless of rate
+// The last hour of the shift always yields 2 patients, regardless of rate
 function calculateProviderRemainingPatients(provider, remainingHours) {
     if (remainingHours <= 0) {
         return 0;
     }
     
-    // If less than 1 hour remaining, they only see 1.8 patients
+    // If less than 1 hour remaining, they only see 2 patients
     if (remainingHours < 1) {
-        return 1.8;
+        return 2;
     }
     
-    // The last hour is always 1.8 patients
+    // The last hour is always 2 patients
     // All hours before the last hour use the provider's rate
     const hoursBeforeLast = remainingHours - 1;
     const patientsFromFullHours = hoursBeforeLast * provider.patientsPerHour;
-    const patientsFromLastHour = 1.8;
+    const patientsFromLastHour = 2;
     
     return patientsFromFullHours + patientsFromLastHour;
 }
@@ -462,7 +462,7 @@ function calculateRemainingPatients() {
     
     const shiftTimes = getShiftTimes(isThursday);
     
-    let totalRemaining = patientsInLobby;
+    let totalProviderCapacity = 0;
     const breakdown = [];
     
     // Calculate for each shift
@@ -501,7 +501,7 @@ function calculateRemainingPatients() {
             );
             
             const remainingPatients = calculateProviderRemainingPatients(provider, remainingHours);
-            totalRemaining += remainingPatients;
+            totalProviderCapacity += remainingPatients;
             
             if (remainingPatients > 0) {
                 breakdown.push({
@@ -514,13 +514,18 @@ function calculateRemainingPatients() {
         });
     });
     
+    // Round down total provider capacity to nearest whole number
+    const roundedProviderCapacity = Math.floor(totalProviderCapacity);
+    
     // Display results
     const resultValue = document.getElementById('resultValue');
     const breakdownDiv = document.getElementById('resultBreakdown');
     
     // Check if no providers are selected
     if (!hasAnyProviders) {
-        resultValue.textContent = patientsInLobby;
+        // If no providers, show negative of lobby patients (can't accept more)
+        const remainingCapacity = 0 - patientsInLobby;
+        resultValue.textContent = remainingCapacity;
         resultBox.classList.add('no-providers');
         breakdownDiv.innerHTML = `
             <div class="breakdown-header" style="color: #fff8dc; font-weight: bold;">⚠️ No Providers Selected</div>
@@ -528,7 +533,9 @@ function calculateRemainingPatients() {
                 Begin by assigning a provider below to calculate remaining patient capacity.
             </div>
             <div class="breakdown-item" style="margin-top: 10px;">
-                <strong>Lobby only:</strong> ${patientsInLobby} patients
+                <strong>Provider capacity:</strong> 0 patients<br>
+                <strong>Lobby:</strong> ${patientsInLobby} patients<br>
+                <strong>Can accept:</strong> ${remainingCapacity} more patients
             </div>
         `;
         return;
@@ -537,23 +544,44 @@ function calculateRemainingPatients() {
     // Remove no-providers class if providers are selected
     resultBox.classList.remove('no-providers');
     
-    resultValue.textContent = Math.round(totalRemaining);
+    // Calculate remaining capacity: rounded down total provider capacity minus patients in lobby
+    const remainingCapacity = roundedProviderCapacity - patientsInLobby;
+    resultValue.textContent = remainingCapacity;
     
     if (breakdown.length > 0) {
         breakdownDiv.innerHTML = `
             <div class="breakdown-header">Breakdown:</div>
-            <div class="breakdown-item">Lobby: ${patientsInLobby} patients</div>
+            <div class="breakdown-item">
+                <strong>Total Provider Capacity (before rounding):</strong> ${totalProviderCapacity.toFixed(1)} patients
+            </div>
             ${breakdown.map(item => `
-                <div class="breakdown-item">
+                <div class="breakdown-item" style="margin-left: 15px; font-size: 0.9em;">
                     ${item.provider} (${item.shift}): ${item.remainingPatients} patients (${item.remainingHours} hrs remaining)
                 </div>
             `).join('')}
+            <div class="breakdown-item" style="margin-top: 10px; border-top: 1px solid rgba(255, 255, 255, 0.3); padding-top: 10px;">
+                <strong>Total Provider Capacity (rounded down):</strong> ${roundedProviderCapacity} patients
+            </div>
+            <div class="breakdown-item">
+                <strong>Patients in Lobby:</strong> ${patientsInLobby} patients
+            </div>
+            <div class="breakdown-item" style="margin-top: 10px; font-weight: bold; font-size: 1.1em;">
+                <strong>Can Accept:</strong> ${remainingCapacity} more patients before pausing
+            </div>
         `;
     } else {
         breakdownDiv.innerHTML = `
             <div class="breakdown-header">Breakdown:</div>
-            <div class="breakdown-item">Lobby: ${patientsInLobby} patients</div>
+            <div class="breakdown-item">
+                <strong>Total Provider Capacity:</strong> 0 patients
+            </div>
             <div class="breakdown-item" style="margin-top: 10px; color: #ffeb3b;">All assigned providers have completed their shifts.</div>
+            <div class="breakdown-item" style="margin-top: 10px; border-top: 1px solid rgba(255, 255, 255, 0.3); padding-top: 10px;">
+                <strong>Patients in Lobby:</strong> ${patientsInLobby} patients
+            </div>
+            <div class="breakdown-item" style="margin-top: 10px; font-weight: bold; font-size: 1.1em;">
+                <strong>Can Accept:</strong> ${remainingCapacity} more patients before pausing
+            </div>
         `;
     }
 }
