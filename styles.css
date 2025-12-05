@@ -325,6 +325,10 @@ header h1 {
     text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
 }
 
+.result-box.closed {
+    background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);
+}
+
 .result-breakdown {
     margin-top: 20px;
     text-align: left;

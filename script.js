@@ -392,6 +392,15 @@ function calculateProviderRemainingPatients(provider, remainingHours) {
     return patientsFromFullHours + patientsFromLastHour;
 }
 
+// Get the latest shift end time based on shift type
+function getLatestShiftEndTime(isThursday) {
+    if (isThursday) {
+        return 19; // 7pm for Thursday shifts
+    } else {
+        return 20; // 8pm for normal shifts
+    }
+}
+
 // Calculate total remaining patients
 function calculateRemainingPatients() {
     const shiftType = document.getElementById('shiftType').value;
@@ -407,7 +416,50 @@ function calculateRemainingPatients() {
     const currentHour = hours;
     const currentMinute = minutes;
     
+    // Debug: Log the time values to help troubleshoot
+    console.log('Time input value:', currentTime);
+    console.log('Parsed hours:', currentHour, 'minutes:', currentMinute);
+    
     const isThursday = shiftType === 'thursday';
+    const latestShiftEnd = getLatestShiftEndTime(isThursday);
+    const currentTimeDecimal = currentHour + currentMinute / 60;
+    
+    console.log('Current time decimal:', currentTimeDecimal, 'Latest shift end:', latestShiftEnd);
+    console.log('Is after closing?', currentTimeDecimal >= latestShiftEnd);
+    
+    // Format time for display
+    const displayHour = currentHour === 0 ? 12 : (currentHour > 12 ? currentHour - 12 : currentHour);
+    const ampm = currentHour >= 12 ? 'PM' : 'AM';
+    const displayTime = `${displayHour}:${String(currentMinute).padStart(2, '0')} ${ampm}`;
+    
+    // Check if current time is after the clinic closes
+    if (currentTimeDecimal >= latestShiftEnd) {
+        const closingTime = latestShiftEnd === 19 ? '7:00 PM' : '8:00 PM';
+        const resultBox = document.getElementById('result');
+        if (resultBox) {
+            resultBox.classList.add('closed');
+        }
+        const resultValue = document.getElementById('resultValue');
+        if (resultValue) {
+            resultValue.textContent = 'CLOSED';
+        }
+        const resultBreakdown = document.getElementById('resultBreakdown');
+        if (resultBreakdown) {
+            resultBreakdown.innerHTML = `
+                <div class="breakdown-header" style="color: #ffeb3b; font-weight: bold;">⚠️ Clinic Closed</div>
+                <div class="breakdown-item" style="margin-top: 10px;">
+                    Current time: ${displayTime} (${currentHour}:${String(currentMinute).padStart(2, '0')})<br>
+                    The clinic closed at ${closingTime}. No remaining patient capacity calculations are available after closing time.
+                </div>
+            `;
+        }
+        return;
+    }
+    
+    // Remove closed class if clinic is open
+    const resultBox = document.getElementById('result');
+    resultBox.classList.remove('closed');
+    
     const shiftTimes = getShiftTimes(isThursday);
     
     let totalRemaining = patientsInLobby;
@@ -492,6 +544,27 @@ document.addEventListener('DOMContentLoaded', () => {
     if (calculateBtn) {
         calculateBtn.addEventListener('click', calculateRemainingPatients);
     }
+    
+    // Auto-check when time changes
+    const currentTimeInput = document.getElementById('currentTime');
+    if (currentTimeInput) {
+        currentTimeInput.addEventListener('change', calculateRemainingPatients);
+        currentTimeInput.addEventListener('input', calculateRemainingPatients);
+    }
+    
+    // Auto-calculate on page load after time is set
+    setTimeout(() => {
+        if (currentTimeInput && currentTimeInput.value) {
+            calculateRemainingPatients();
+        }
+    }, 200);
+    
+    // Also try immediately after a longer delay (in case loadData takes time)
+    setTimeout(() => {
+        if (currentTimeInput && currentTimeInput.value) {
+            calculateRemainingPatients();
+        }
+    }, 500);
     
     if (addProviderBtn) {
         addProviderBtn.addEventListener('click', function(e) {
