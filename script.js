@@ -477,6 +477,11 @@ function calculateRemainingPatients() {
         if (resultValue) {
             resultValue.textContent = 'CLOSED';
         }
+        // Hide Rickey message when closed
+        const rickeyMessage = document.getElementById('rickeyMessage');
+        if (rickeyMessage) {
+            rickeyMessage.style.display = 'none';
+        }
         const resultBreakdown = document.getElementById('resultBreakdown');
         if (resultBreakdown) {
             resultBreakdown.innerHTML = `
@@ -561,6 +566,20 @@ function calculateRemainingPatients() {
         const remainingCapacity = 0 - patientsInLobby;
         resultValue.textContent = remainingCapacity;
         resultBox.classList.add('no-providers');
+        // Remove any color coding classes to keep the brown no-providers color
+        resultBox.classList.remove('capacity-red', 'capacity-yellow', 'capacity-green', 'capacity-negative');
+        
+        // Show/hide Rickey message
+        const rickeyMessage = document.getElementById('rickeyMessage');
+        if (rickeyMessage) {
+            if (remainingCapacity < 0) {
+                rickeyMessage.textContent = "You Pulled a Rickey! Time to encourage patient's leave.";
+                rickeyMessage.style.display = 'block';
+            } else {
+                rickeyMessage.style.display = 'none';
+            }
+        }
+        
         breakdownDiv.innerHTML = `
             <div class="breakdown-header" style="color: #fff8dc; font-weight: bold;">⚠️ No Providers Selected</div>
             <div class="breakdown-item" style="margin-top: 10px;">
@@ -581,6 +600,31 @@ function calculateRemainingPatients() {
     // Calculate remaining capacity: rounded down total provider capacity minus patients in lobby
     const remainingCapacity = roundedProviderCapacity - patientsInLobby;
     resultValue.textContent = remainingCapacity;
+    
+    // Apply color coding based on remaining capacity
+    resultValue.className = 'result-value'; // Reset classes
+    resultBox.classList.remove('capacity-red', 'capacity-yellow', 'capacity-green', 'capacity-negative');
+    
+    // Show/hide Rickey message
+    const rickeyMessage = document.getElementById('rickeyMessage');
+    if (rickeyMessage) {
+        if (remainingCapacity < 0) {
+            rickeyMessage.textContent = "You Pulled a Rickey! Time to encourage patient's leave.";
+            rickeyMessage.style.display = 'block';
+        } else {
+            rickeyMessage.style.display = 'none';
+        }
+    }
+    
+    if (remainingCapacity < 0) {
+        resultBox.classList.add('capacity-negative');
+    } else if (remainingCapacity <= 1) {
+        resultBox.classList.add('capacity-red');
+    } else if (remainingCapacity <= 4) {
+        resultBox.classList.add('capacity-yellow');
+    } else {
+        resultBox.classList.add('capacity-green');
+    }
     
     if (breakdown.length > 0) {
         breakdownDiv.innerHTML = `
