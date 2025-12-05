@@ -309,6 +309,39 @@ details[open] summary::before {
     border-color: #667eea;
 }
 
+.assigned-providers-list {
+    margin-bottom: 15px;
+}
+
+.assigned-provider-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 12px;
+    background: #e6f3ff;
+    border: 1px solid #b3d9ff;
+    border-radius: 6px;
+    margin-bottom: 8px;
+}
+
+.assigned-provider-name {
+    font-weight: 500;
+    color: #333;
+    flex: 1;
+}
+
+.remove-provider-btn {
+    padding: 4px 10px;
+    font-size: 1.2em;
+    line-height: 1;
+    min-width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
 .thursday-notice {
     background: #fef3c7;
     border: 2px solid #fbbf24;

@@ -283,7 +283,29 @@ function updateShiftAssignments() {
         if (providers.length === 0) {
             container.innerHTML = '<p class="empty-state">Add providers first</p>';
         } else {
-            // Create dropdown
+            // Show assigned providers with remove buttons
+            const assignedProviders = (shiftAssignments[shift] || [])
+                .map(id => providers.find(p => p.id === id))
+                .filter(p => p !== undefined);
+            
+            if (assignedProviders.length > 0) {
+                const assignedList = document.createElement('div');
+                assignedList.className = 'assigned-providers-list';
+                
+                assignedProviders.forEach(provider => {
+                    const providerItem = document.createElement('div');
+                    providerItem.className = 'assigned-provider-item';
+                    providerItem.innerHTML = `
+                        <span class="assigned-provider-name">${provider.name || 'Unnamed Provider'}</span>
+                        <button class="btn btn-small btn-danger remove-provider-btn" onclick="removeProviderFromShift('${shift}', ${provider.id})" title="Remove from shift">×</button>
+                    `;
+                    assignedList.appendChild(providerItem);
+                });
+                
+                container.appendChild(assignedList);
+            }
+            
+            // Create dropdown to add providers
             const select = document.createElement('select');
             select.className = 'shift-provider-dropdown';
             select.id = `dropdown-${shift}`;
@@ -294,16 +316,15 @@ function updateShiftAssignments() {
             emptyOption.textContent = 'Select a provider...';
             select.appendChild(emptyOption);
             
-            // Add providers
+            // Add providers that aren't already assigned to this shift
             providers.forEach(provider => {
-                const option = document.createElement('option');
-                option.value = provider.id;
-                option.textContent = provider.name || 'Unnamed Provider';
                 const isAssigned = shiftAssignments[shift] && shiftAssignments[shift].includes(provider.id);
-                if (isAssigned) {
-                    option.selected = true;
+                if (!isAssigned) {
+                    const option = document.createElement('option');
+                    option.value = provider.id;
+                    option.textContent = provider.name || 'Unnamed Provider';
+                    select.appendChild(option);
                 }
-                select.appendChild(option);
             });
             
             // Handle dropdown change
@@ -333,6 +354,19 @@ function handleShiftProviderChange(shift, providerId) {
     
     saveData();
     updateShiftAssignments(); // Refresh to update other dropdowns
+    // Automatically recalculate remaining patients
+    calculateRemainingPatients();
+}
+
+// Remove a provider from a specific shift
+function removeProviderFromShift(shift, providerId) {
+    if (shiftAssignments[shift]) {
+        shiftAssignments[shift] = shiftAssignments[shift].filter(id => id !== providerId);
+        saveData();
+        updateShiftAssignments();
+        // Automatically recalculate remaining patients
+        calculateRemainingPatients();
+    }
 }
 
 // Get shift times based on shift type
