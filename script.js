@@ -710,7 +710,7 @@ function calculateRemainingPatients() {
         breakdownDiv.innerHTML = `
             <div class="breakdown-header">Breakdown:</div>
             ${breakdown.map(item => `
-                <div class="breakdown-item" style="margin-left: 15px; font-size: 0.9em;">
+                <div class="breakdown-item" style="font-size: 0.9em;">
                     ${item.provider} (${item.shift}): ${Math.floor(parseFloat(item.remainingPatients))} patients (${item.remainingHours} hrs remaining)
                 </div>
             `).join('')}

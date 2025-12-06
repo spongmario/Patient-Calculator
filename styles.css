@@ -58,12 +58,14 @@ header h1 {
     font-size: 1.5em;
     border-bottom: 2px solid #667eea;
     padding-bottom: 10px;
+    text-align: center;
 }
 
 .card h3 {
     color: #555;
     margin-bottom: 15px;
     font-size: 1.2em;
+    text-align: center;
 }
 
 /* Provider Form */
@@ -135,6 +137,7 @@ header h1 {
 
 .providers-header {
     margin-bottom: 15px;
+    text-align: center;
 }
 
 .help-text {
@@ -211,6 +214,7 @@ details summary::-webkit-details-marker {
 
 details summary {
     list-style: none;
+    text-align: center;
 }
 
 details summary::before {
@@ -228,17 +232,24 @@ details[open] summary::before {
 /* Providers List */
 .providers-list {
     margin-top: 20px;
+    max-width: 800px;
+    margin-left: auto;
+    margin-right: auto;
 }
 
 .provider-row {
     display: grid;
-    grid-template-columns: 200px 120px auto auto;
+    grid-template-columns: 200px 120px 80px 80px;
     gap: 12px;
     align-items: center;
     margin-bottom: 12px;
     padding: 10px;
     border-radius: 6px;
     transition: background-color 0.2s;
+    justify-content: center;
+    max-width: 600px;
+    margin-left: auto;
+    margin-right: auto;
 }
 
 .provider-row:hover {
@@ -341,6 +352,7 @@ details[open] summary::before {
     color: #667eea;
     margin-bottom: 15px;
     font-size: 1.1em;
+    text-align: center;
 }
 
 .shift-assignment {
@@ -430,6 +442,7 @@ details[open] summary::before {
 /* Calculation Section */
 .calculation-section {
     max-width: 600px;
+    margin: 0 auto;
 }
 
 .result-box {
@@ -459,6 +472,7 @@ details[open] summary::before {
     margin-bottom: 15px;
     border: none;
     padding: 0;
+    text-align: center;
 }
 
 .result-value {
@@ -524,7 +538,7 @@ details[open] summary::before {
 
 .result-breakdown {
     margin-top: 20px;
-    text-align: left;
+    text-align: center;
     background: rgba(255, 255, 255, 0.1);
     padding: 15px;
     border-radius: 6px;
@@ -534,11 +548,13 @@ details[open] summary::before {
     font-weight: 600;
     margin-bottom: 10px;
     font-size: 1.1em;
+    text-align: center;
 }
 
 .breakdown-item {
     padding: 8px 0;
     border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+    text-align: center;
 }
 
 .breakdown-item:last-child {
