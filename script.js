@@ -670,11 +670,6 @@ function calculateRemainingPatients() {
             <div class="breakdown-item" style="margin-top: 10px;">
                 Begin by assigning a provider below to calculate remaining patient capacity.
             </div>
-            <div class="breakdown-item" style="margin-top: 10px;">
-                <strong>Provider capacity:</strong> 0 patients<br>
-                <strong>Lobby:</strong> ${patientsInLobby} patients<br>
-                <strong>Can accept:</strong> ${remainingCapacity} more patients
-            </div>
         `;
         return;
     }
@@ -714,37 +709,16 @@ function calculateRemainingPatients() {
     if (breakdown.length > 0) {
         breakdownDiv.innerHTML = `
             <div class="breakdown-header">Breakdown:</div>
-            <div class="breakdown-item">
-                <strong>Total Provider Capacity (before rounding):</strong> ${totalProviderCapacity.toFixed(1)} patients
-            </div>
             ${breakdown.map(item => `
                 <div class="breakdown-item" style="margin-left: 15px; font-size: 0.9em;">
-                    ${item.provider} (${item.shift}): ${item.remainingPatients} patients (${item.remainingHours} hrs remaining)
+                    ${item.provider} (${item.shift}): ${Math.floor(parseFloat(item.remainingPatients))} patients (${item.remainingHours} hrs remaining)
                 </div>
             `).join('')}
-            <div class="breakdown-item" style="margin-top: 10px; border-top: 1px solid rgba(255, 255, 255, 0.3); padding-top: 10px;">
-                <strong>Total Provider Capacity (rounded down):</strong> ${roundedProviderCapacity} patients
-            </div>
-            <div class="breakdown-item">
-                <strong>Patients in Lobby:</strong> ${patientsInLobby} patients
-            </div>
-            <div class="breakdown-item" style="margin-top: 10px; font-weight: bold; font-size: 1.1em;">
-                <strong>Can Accept:</strong> ${remainingCapacity} more patients before pausing
-            </div>
         `;
     } else {
         breakdownDiv.innerHTML = `
             <div class="breakdown-header">Breakdown:</div>
-            <div class="breakdown-item">
-                <strong>Total Provider Capacity:</strong> 0 patients
-            </div>
             <div class="breakdown-item" style="margin-top: 10px; color: #ffeb3b;">All assigned providers have completed their shifts.</div>
-            <div class="breakdown-item" style="margin-top: 10px; border-top: 1px solid rgba(255, 255, 255, 0.3); padding-top: 10px;">
-                <strong>Patients in Lobby:</strong> ${patientsInLobby} patients
-            </div>
-            <div class="breakdown-item" style="margin-top: 10px; font-weight: bold; font-size: 1.1em;">
-                <strong>Can Accept:</strong> ${remainingCapacity} more patients before pausing
-            </div>
         `;
     }
 }
