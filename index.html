@@ -26,6 +26,10 @@
                     <span class="nav-icon">📋</span>
                     <span class="nav-text">Clinical Pathways</span>
                 </button>
+                <button class="nav-item" data-page="physical-therapy">
+                    <span class="nav-icon">🏃</span>
+                    <span class="nav-text">Physical Therapy</span>
+                </button>
             </nav>
         </aside>
 
@@ -49,6 +53,12 @@
                         <h3>Clinical Pathways</h3>
                         <p>Access clinical practice guidelines and pathways to help guide decision-making in various patient care situations.</p>
                         <button class="btn btn-primary" onclick="navigateToPage('pathways')">View Pathways</button>
+                    </div>
+                    <div class="intro-card">
+                        <div class="intro-icon">🏃</div>
+                        <h3>Physical Therapy</h3>
+                        <p>Access physical therapy guides, exercise recommendations, and stretching instructions for various conditions.</p>
+                        <button class="btn btn-primary" onclick="navigateToPage('physical-therapy')">View PT Guides</button>
                     </div>
                 </div>
             </div>
@@ -166,7 +176,79 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Physical Therapy Page -->
+            <div id="physical-therapy-page" class="page">
+                <div class="page-header">
+                    <h2>Physical Therapy Guides</h2>
+                    <p class="page-subtitle">Physical therapy guides, exercises, and recommendations for patient care</p>
+                </div>
+                <div class="pathways-content">
+                    <div class="pathways-controls">
+                        <div class="auth-controls">
+                            <button id="ptAdminLoginBtn" class="btn btn-secondary" style="display: none;">
+                                🔐 Admin Login
+                            </button>
+                            <button id="ptAdminLogoutBtn" class="btn btn-secondary" style="display: none;">
+                                🚪 Logout
+                            </button>
+                        </div>
+                        <input type="file" id="ptFileInput" accept=".pdf,.doc,.docx,.txt" multiple style="display: none;">
+                        <button id="uploadPtBtn" class="btn btn-primary" style="display: none;" onclick="handlePtUploadClick()">
+                            📁 Upload PT Guide
+                        </button>
+                        <button id="addRecommendationBtn" class="btn btn-primary" style="display: none;" onclick="showAddRecommendationModal()">
+                            ➕ Add Recommendation
+                        </button>
+                        <div class="search-box">
+                            <input type="text" id="ptSearch" placeholder="Search PT guides..." class="search-input">
+                        </div>
+                    </div>
+                    
+                    <!-- Written Recommendations Section -->
+                    <div id="ptRecommendationsSection" class="pt-recommendations-section" style="display: none;">
+                        <h3 class="section-title">Written Recommendations</h3>
+                        <div id="ptRecommendationsList" class="pt-recommendations-list"></div>
+                    </div>
+                    
+                    <!-- Documents Section -->
+                    <div id="ptDocumentsSection">
+                        <h3 class="section-title">PT Guide Documents</h3>
+                        <div id="ptList" class="pathways-list">
+                            <div class="empty-pathways">
+                                <div class="empty-icon">🏃</div>
+                                <h3>No Physical Therapy Guides Yet</h3>
+                                <p>Physical therapy guides are managed by administrators. Contact your administrator to add documents.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </main>
+    </div>
+
+    <!-- Add Recommendation Modal -->
+    <div id="recommendationModal" class="modal" style="display: none;" onclick="if(event.target === this) closeRecommendationModal()">
+        <div class="modal-content" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h3>Add/Edit Recommendation</h3>
+                <button class="modal-close" onclick="closeRecommendationModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="recommendationTitle">Title/Condition:</label>
+                    <input type="text" id="recommendationTitle" placeholder="e.g., Lower Back Pain" class="form-input">
+                </div>
+                <div class="form-group">
+                    <label for="recommendationContent">Content:</label>
+                    <textarea id="recommendationContent" placeholder="Enter recommendations, exercises, stretching instructions, etc." rows="10" class="form-textarea"></textarea>
+                </div>
+                <div class="modal-actions">
+                    <button class="btn btn-secondary" onclick="closeRecommendationModal()">Cancel</button>
+                    <button class="btn btn-primary" onclick="saveRecommendation()">Save</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script src="script.js"></script>

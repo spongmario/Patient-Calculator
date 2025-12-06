@@ -858,6 +858,11 @@ function navigateToPage(pageId) {
         const currentFilter = searchInput ? searchInput.value : '';
         renderPathways(currentFilter);
     }
+    
+    // Initialize PT when navigating to physical therapy page
+    if (pageId === 'physical-therapy') {
+        initializePT();
+    }
 }
 
 function initializeNavigation() {
@@ -884,7 +889,7 @@ let db = null;
 
 // IndexedDB setup
 const DB_NAME = 'CHCToolkitDB';
-const DB_VERSION = 1;
+const DB_VERSION = 2; // Updated to 2 to include PT stores
 const STORE_NAME = 'pathways';
 
 function initDB() {
@@ -908,7 +913,18 @@ function initDB() {
                 const objectStore = db.createObjectStore(STORE_NAME, { keyPath: 'id' });
                 objectStore.createIndex('name', 'name', { unique: false });
                 objectStore.createIndex('uploadDate', 'uploadDate', { unique: false });
-                console.log('IndexedDB object store created');
+                console.log('IndexedDB pathways store created');
+            }
+            // Create PT stores if they don't exist
+            if (!db.objectStoreNames.contains('ptGuides')) {
+                const ptStore = db.createObjectStore('ptGuides', { keyPath: 'id' });
+                ptStore.createIndex('name', 'name', { unique: false });
+                console.log('IndexedDB PT guides store created');
+            }
+            if (!db.objectStoreNames.contains('ptRecommendations')) {
+                const recStore = db.createObjectStore('ptRecommendations', { keyPath: 'id' });
+                recStore.createIndex('title', 'title', { unique: false });
+                console.log('IndexedDB PT recommendations store created');
             }
         };
     });
@@ -1462,5 +1478,647 @@ window.downloadPathway = downloadPathway;
 window.renamePathway = renamePathway;
 window.deletePathway = deletePathway;
 window.handleUploadClick = handleUploadClick;
+
+// ==================== Physical Therapy System ====================
+
+const PT_STORE_NAME = 'ptGuides';
+const PT_RECOMMENDATIONS_STORE = 'ptRecommendations';
+
+let ptGuides = [];
+let ptRecommendations = [];
+let ptIsAuthenticated = false;
+let editingRecommendationId = null;
+
+// Initialize PT DB stores
+function initPTDB() {
+    return new Promise((resolve, reject) => {
+        if (!db) {
+            initDB().then(() => {
+                initPTStores().then(resolve).catch(reject);
+            }).catch(reject);
+        } else {
+            initPTStores().then(resolve).catch(reject);
+        }
+    });
+}
+
+function initPTStores() {
+    return new Promise((resolve, reject) => {
+        // Just check if stores exist - they should be created in initDB's onupgradeneeded
+        // If they don't exist, we need to trigger an upgrade
+        const needsPTStore = !db.objectStoreNames.contains(PT_STORE_NAME);
+        const needsRecStore = !db.objectStoreNames.contains(PT_RECOMMENDATIONS_STORE);
+        
+        if (needsPTStore || needsRecStore) {
+            // Close current connection and reopen with higher version
+            const currentVersion = db.version;
+            db.close();
+            const newVersion = currentVersion + 1;
+            const request = indexedDB.open(DB_NAME, newVersion);
+            
+            request.onupgradeneeded = (event) => {
+                const db = event.target.result;
+                if (needsPTStore && !db.objectStoreNames.contains(PT_STORE_NAME)) {
+                    const objectStore = db.createObjectStore(PT_STORE_NAME, { keyPath: 'id' });
+                    objectStore.createIndex('name', 'name', { unique: false });
+                }
+                if (needsRecStore && !db.objectStoreNames.contains(PT_RECOMMENDATIONS_STORE)) {
+                    const objectStore = db.createObjectStore(PT_RECOMMENDATIONS_STORE, { keyPath: 'id' });
+                    objectStore.createIndex('title', 'title', { unique: false });
+                }
+            };
+            
+            request.onsuccess = () => {
+                db = request.result;
+                resolve(db);
+            };
+            
+            request.onerror = () => {
+                console.error('Error upgrading DB:', request.error);
+                reject(request.error);
+            };
+        } else {
+            // Stores already exist
+            resolve(db);
+        }
+    });
+}
+
+async function loadPTGuides() {
+    try {
+        if (!db) {
+            await initDB();
+        }
+        if (!db.objectStoreNames.contains(PT_STORE_NAME)) {
+            await initPTDB();
+        }
+        
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([PT_STORE_NAME], 'readonly');
+            const store = transaction.objectStore(PT_STORE_NAME);
+            const request = store.getAll();
+            
+            request.onsuccess = () => {
+                ptGuides = request.result || [];
+                console.log('Loaded', ptGuides.length, 'PT guides from IndexedDB');
+                renderPTGuides();
+                resolve(ptGuides);
+            };
+            
+            request.onerror = () => reject(request.error);
+        });
+    } catch (error) {
+        console.error('Error loading PT guides:', error);
+        ptGuides = [];
+        renderPTGuides();
+    }
+}
+
+async function loadPTRecommendations() {
+    try {
+        if (!db) {
+            await initDB();
+        }
+        if (!db.objectStoreNames.contains(PT_RECOMMENDATIONS_STORE)) {
+            await initPTDB();
+        }
+        
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([PT_RECOMMENDATIONS_STORE], 'readonly');
+            const store = transaction.objectStore(PT_RECOMMENDATIONS_STORE);
+            const request = store.getAll();
+            
+            request.onsuccess = () => {
+                ptRecommendations = request.result || [];
+                console.log('Loaded', ptRecommendations.length, 'PT recommendations from IndexedDB');
+                renderPTRecommendations();
+                resolve(ptRecommendations);
+            };
+            
+            request.onerror = () => reject(request.error);
+        });
+    } catch (error) {
+        console.error('Error loading PT recommendations:', error);
+        ptRecommendations = [];
+        renderPTRecommendations();
+    }
+}
+
+async function savePTGuide(guide) {
+    try {
+        if (!db) await initDB();
+        if (!db.objectStoreNames.contains(PT_STORE_NAME)) await initPTDB();
+        
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([PT_STORE_NAME], 'readwrite');
+            const store = transaction.objectStore(PT_STORE_NAME);
+            const request = store.put(guide);
+            
+            request.onsuccess = () => resolve();
+            request.onerror = () => reject(request.error);
+        });
+    } catch (error) {
+        throw error;
+    }
+}
+
+async function savePTRecommendation(recommendation) {
+    try {
+        if (!db) await initDB();
+        if (!db.objectStoreNames.contains(PT_RECOMMENDATIONS_STORE)) await initPTDB();
+        
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([PT_RECOMMENDATIONS_STORE], 'readwrite');
+            const store = transaction.objectStore(PT_RECOMMENDATIONS_STORE);
+            const request = store.put(recommendation);
+            
+            request.onsuccess = () => resolve();
+            request.onerror = () => reject(request.error);
+        });
+    } catch (error) {
+        throw error;
+    }
+}
+
+async function deletePTGuideFromDB(id) {
+    try {
+        if (!db) await initDB();
+        
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([PT_STORE_NAME], 'readwrite');
+            const store = transaction.objectStore(PT_STORE_NAME);
+            const request = store.delete(id);
+            
+            request.onsuccess = () => resolve();
+            request.onerror = () => reject(request.error);
+        });
+    } catch (error) {
+        throw error;
+    }
+}
+
+async function deletePTRecommendationFromDB(id) {
+    try {
+        if (!db) await initDB();
+        
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([PT_RECOMMENDATIONS_STORE], 'readwrite');
+            const store = transaction.objectStore(PT_RECOMMENDATIONS_STORE);
+            const request = store.delete(id);
+            
+            request.onsuccess = () => resolve();
+            request.onerror = () => reject(request.error);
+        });
+    } catch (error) {
+        throw error;
+    }
+}
+
+function renderPTGuides(filter = '') {
+    const container = document.getElementById('ptList');
+    if (!container) return;
+    
+    let filteredGuides = [...ptGuides];
+    
+    if (filter) {
+        const searchLower = filter.toLowerCase();
+        filteredGuides = filteredGuides.filter(g => 
+            g.name.toLowerCase().includes(searchLower)
+        );
+    }
+    
+    filteredGuides.sort((a, b) => {
+        return a.name.toLowerCase().localeCompare(b.name.toLowerCase());
+    });
+    
+    if (filteredGuides.length === 0 && ptGuides.length === 0) {
+        container.innerHTML = `
+            <div class="empty-pathways">
+                <div class="empty-icon">🏃</div>
+                <h3>No Physical Therapy Guides Yet</h3>
+                <p>Physical therapy guides are managed by administrators. Contact your administrator to add documents.</p>
+            </div>
+        `;
+        return;
+    }
+    
+    if (filteredGuides.length === 0) {
+        container.innerHTML = `
+            <div class="empty-pathways">
+                <div class="empty-icon">🔍</div>
+                <h3>No Guides Found</h3>
+                <p>No guides match your search criteria.</p>
+            </div>
+        `;
+        return;
+    }
+    
+    container.innerHTML = `
+        <div class="pathway-list-container">
+            ${filteredGuides.map((guide) => {
+                const fileIcon = getFileIcon(guide.fileType);
+                const actualIndex = ptGuides.findIndex(g => g.id === guide.id);
+                return `
+                    <div class="pathway-list-item" onclick="viewPTGuide(${actualIndex})">
+                        <div class="pathway-list-icon">${fileIcon}</div>
+                        <div class="pathway-list-info">
+                            <div class="pathway-list-name">${escapeHtml(guide.name)}</div>
+                        </div>
+                        <div class="pathway-list-actions" onclick="event.stopPropagation()">
+                            <button class="btn btn-secondary btn-small" onclick="downloadPTGuide(${actualIndex})">Download</button>
+                            ${ptIsAuthenticated ? `
+                                <button class="btn btn-primary btn-small" onclick="renamePTGuide(${actualIndex})">Rename</button>
+                                <button class="btn btn-danger btn-small" onclick="deletePTGuide(${actualIndex})">Delete</button>
+                            ` : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('')}
+        </div>
+    `;
+}
+
+function renderPTRecommendations() {
+    const container = document.getElementById('ptRecommendationsList');
+    const section = document.getElementById('ptRecommendationsSection');
+    if (!container) return;
+    
+    if (ptRecommendations.length === 0) {
+        section.style.display = 'none';
+        return;
+    }
+    
+    section.style.display = 'block';
+    
+    // Sort alphabetically
+    const sorted = [...ptRecommendations].sort((a, b) => 
+        a.title.toLowerCase().localeCompare(b.title.toLowerCase())
+    );
+    
+    container.innerHTML = sorted.map((rec) => `
+        <div class="pt-recommendation-card">
+            <div class="pt-recommendation-header">
+                <div class="pt-recommendation-title">${escapeHtml(rec.title)}</div>
+                ${ptIsAuthenticated ? `
+                    <div class="pt-recommendation-actions">
+                        <button class="btn btn-primary btn-small" onclick="editRecommendation('${rec.id}')">Edit</button>
+                        <button class="btn btn-danger btn-small" onclick="deletePTRecommendation('${rec.id}')">Delete</button>
+                    </div>
+                ` : ''}
+            </div>
+            <div class="pt-recommendation-content">${escapeHtml(rec.content)}</div>
+        </div>
+    `).join('');
+}
+
+async function handlePTFileUpload(files) {
+    if (!files || files.length === 0) return;
+    
+    if (!db) {
+        try {
+            await initDB();
+            await initPTDB();
+        } catch (error) {
+            alert('Error initializing database: ' + error.message);
+            return;
+        }
+    }
+    
+    const fileArray = Array.from(files);
+    let processedCount = 0;
+    
+    for (let index = 0; index < fileArray.length; index++) {
+        const file = fileArray[index];
+        const maxSize = 100 * 1024 * 1024;
+        
+        if (file.size > maxSize) {
+            alert(`File "${file.name}" is too large. Maximum size is 100MB.`);
+            continue;
+        }
+        
+        try {
+            const arrayBuffer = await file.arrayBuffer();
+            const guide = {
+                id: Date.now() + Math.random() + index,
+                name: file.name,
+                fileType: getFileExtension(file.name),
+                size: file.size,
+                uploadDate: new Date().toISOString(),
+                data: arrayBuffer,
+                mimeType: file.type
+            };
+            
+            await savePTGuide(guide);
+            ptGuides.push(guide);
+            processedCount++;
+        } catch (error) {
+            alert(`Error uploading file "${file.name}": ${error.message}`);
+        }
+    }
+    
+    renderPTGuides();
+    if (processedCount > 0) {
+        alert(`Successfully uploaded ${processedCount} file(s)!`);
+    }
+}
+
+function viewPTGuide(index) {
+    const guide = ptGuides[index];
+    if (!guide) return;
+    
+    const blob = new Blob([guide.data], { type: guide.mimeType || 'application/octet-stream' });
+    const blobUrl = URL.createObjectURL(blob);
+    const newWindow = window.open();
+    
+    if (guide.mimeType === 'application/pdf' || guide.fileType === 'pdf') {
+        newWindow.document.write(`
+            <html>
+                <head><title>${escapeHtml(guide.name)}</title></head>
+                <body style="margin:0;padding:0;">
+                    <embed src="${blobUrl}" type="application/pdf" width="100%" height="100%" style="position:absolute;top:0;left:0;width:100%;height:100vh;" />
+                </body>
+            </html>
+        `);
+    } else {
+        newWindow.document.write(`
+            <html>
+                <head><title>${escapeHtml(guide.name)}</title></head>
+                <body style="margin:20px;font-family:Arial;">
+                    <h2>${escapeHtml(guide.name)}</h2>
+                    <p>This file type cannot be displayed in the browser. Please download it to view.</p>
+                    <button onclick="window.location.href='${blobUrl}'" download="${escapeHtml(guide.name)}" style="padding:10px 20px;background:#667eea;color:white;border:none;border-radius:6px;cursor:pointer;">
+                        Download File
+                    </button>
+                </body>
+            </html>
+        `);
+    }
+    
+    newWindow.addEventListener('beforeunload', () => {
+        URL.revokeObjectURL(blobUrl);
+    });
+}
+
+function downloadPTGuide(index) {
+    const guide = ptGuides[index];
+    if (!guide) return;
+    
+    const blob = new Blob([guide.data], { type: guide.mimeType || 'application/octet-stream' });
+    const blobUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = blobUrl;
+    link.download = guide.name;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 100);
+}
+
+async function renamePTGuide(index) {
+    if (!ptIsAuthenticated) {
+        alert('You must be authenticated to rename documents.');
+        handlePTAdminLogin();
+        return;
+    }
+    
+    const guide = ptGuides[index];
+    if (!guide) return;
+    
+    const newName = prompt(`Rename "${guide.name}" to:`, guide.name);
+    if (!newName || newName.trim() === '' || newName.trim() === guide.name) return;
+    
+    try {
+        guide.name = newName.trim();
+        await savePTGuide(guide);
+        const searchInput = document.getElementById('ptSearch');
+        renderPTGuides(searchInput ? searchInput.value : '');
+    } catch (error) {
+        alert('Error renaming document: ' + error.message);
+    }
+}
+
+async function deletePTGuide(index) {
+    if (!ptIsAuthenticated) {
+        alert('You must be authenticated to delete documents.');
+        handlePTAdminLogin();
+        return;
+    }
+    
+    const guide = ptGuides[index];
+    if (!guide) return;
+    
+    if (!confirm(`Are you sure you want to delete "${guide.name}"?`)) return;
+    
+    try {
+        await deletePTGuideFromDB(guide.id);
+        ptGuides.splice(index, 1);
+        renderPTGuides();
+    } catch (error) {
+        alert('Error deleting document: ' + error.message);
+    }
+}
+
+function checkPTAuthentication() {
+    const authStatus = sessionStorage.getItem('chcPTAdminAuthenticated');
+    ptIsAuthenticated = authStatus === 'true';
+    updatePTAuthUI();
+}
+
+function updatePTAuthUI() {
+    const loginBtn = document.getElementById('ptAdminLoginBtn');
+    const logoutBtn = document.getElementById('ptAdminLogoutBtn');
+    const uploadBtn = document.getElementById('uploadPtBtn');
+    const addRecBtn = document.getElementById('addRecommendationBtn');
+    
+    if (ptIsAuthenticated) {
+        if (loginBtn) loginBtn.style.display = 'none';
+        if (logoutBtn) logoutBtn.style.display = 'block';
+        if (uploadBtn) uploadBtn.style.display = 'block';
+        if (addRecBtn) addRecBtn.style.display = 'block';
+    } else {
+        if (loginBtn) loginBtn.style.display = 'block';
+        if (logoutBtn) logoutBtn.style.display = 'none';
+        if (uploadBtn) uploadBtn.style.display = 'none';
+        if (addRecBtn) addRecBtn.style.display = 'none';
+    }
+}
+
+function handlePTAdminLogin() {
+    const password = prompt('Enter admin password to manage PT guides:');
+    if (password === ADMIN_PASSWORD) {
+        ptIsAuthenticated = true;
+        sessionStorage.setItem('chcPTAdminAuthenticated', 'true');
+        updatePTAuthUI();
+        const searchInput = document.getElementById('ptSearch');
+        renderPTGuides(searchInput ? searchInput.value : '');
+        renderPTRecommendations();
+        alert('Authentication successful! You can now manage PT guides and recommendations.');
+    } else if (password !== null) {
+        alert('Incorrect password. Access denied.');
+    }
+}
+
+function handlePTAdminLogout() {
+    if (confirm('Are you sure you want to logout?')) {
+        ptIsAuthenticated = false;
+        sessionStorage.removeItem('chcPTAdminAuthenticated');
+        updatePTAuthUI();
+        const searchInput = document.getElementById('ptSearch');
+        renderPTGuides(searchInput ? searchInput.value : '');
+        renderPTRecommendations();
+    }
+}
+
+function handlePtUploadClick() {
+    if (!ptIsAuthenticated) {
+        handlePTAdminLogin();
+        if (!ptIsAuthenticated) return;
+    }
+    
+    const fileInput = document.getElementById('ptFileInput');
+    if (fileInput) fileInput.click();
+}
+
+function showAddRecommendationModal() {
+    if (!ptIsAuthenticated) {
+        handlePTAdminLogin();
+        return;
+    }
+    
+    editingRecommendationId = null;
+    document.getElementById('recommendationTitle').value = '';
+    document.getElementById('recommendationContent').value = '';
+    document.getElementById('recommendationModal').style.display = 'block';
+}
+
+function closeRecommendationModal() {
+    document.getElementById('recommendationModal').style.display = 'none';
+    editingRecommendationId = null;
+}
+
+function editRecommendation(id) {
+    if (!ptIsAuthenticated) {
+        handlePTAdminLogin();
+        return;
+    }
+    
+    const rec = ptRecommendations.find(r => r.id === id);
+    if (!rec) return;
+    
+    editingRecommendationId = id;
+    document.getElementById('recommendationTitle').value = rec.title;
+    document.getElementById('recommendationContent').value = rec.content;
+    document.getElementById('recommendationModal').style.display = 'block';
+}
+
+async function saveRecommendation() {
+    const title = document.getElementById('recommendationTitle').value.trim();
+    const content = document.getElementById('recommendationContent').value.trim();
+    
+    if (!title || !content) {
+        alert('Please fill in both title and content.');
+        return;
+    }
+    
+    try {
+        const recommendation = {
+            id: editingRecommendationId || Date.now() + Math.random(),
+            title: title,
+            content: content,
+            createdDate: editingRecommendationId 
+                ? ptRecommendations.find(r => r.id === editingRecommendationId)?.createdDate || new Date().toISOString()
+                : new Date().toISOString(),
+            updatedDate: new Date().toISOString()
+        };
+        
+        await savePTRecommendation(recommendation);
+        
+        if (editingRecommendationId) {
+            const index = ptRecommendations.findIndex(r => r.id === editingRecommendationId);
+            if (index !== -1) {
+                ptRecommendations[index] = recommendation;
+            }
+        } else {
+            ptRecommendations.push(recommendation);
+        }
+        
+        renderPTRecommendations();
+        closeRecommendationModal();
+    } catch (error) {
+        alert('Error saving recommendation: ' + error.message);
+    }
+}
+
+async function deletePTRecommendation(id) {
+    if (!ptIsAuthenticated) {
+        handlePTAdminLogin();
+        return;
+    }
+    
+    const rec = ptRecommendations.find(r => r.id === id);
+    if (!rec) return;
+    
+    if (!confirm(`Are you sure you want to delete "${rec.title}"?`)) return;
+    
+    try {
+        await deletePTRecommendationFromDB(id);
+        ptRecommendations = ptRecommendations.filter(r => r.id !== id);
+        renderPTRecommendations();
+    } catch (error) {
+        alert('Error deleting recommendation: ' + error.message);
+    }
+}
+
+async function initializePT() {
+    try {
+        await initDB();
+        await initPTDB();
+    } catch (error) {
+        console.error('Failed to initialize PT DB:', error);
+    }
+    
+    await loadPTGuides();
+    await loadPTRecommendations();
+    checkPTAuthentication();
+    
+    const fileInput = document.getElementById('ptFileInput');
+    if (fileInput) {
+        fileInput.addEventListener('change', function(e) {
+            if (!ptIsAuthenticated) {
+                alert('You must be authenticated to upload documents.');
+                e.target.value = '';
+                return;
+            }
+            if (e.target.files && e.target.files.length > 0) {
+                handlePTFileUpload(e.target.files);
+                e.target.value = '';
+            }
+        });
+    }
+    
+    const searchInput = document.getElementById('ptSearch');
+    if (searchInput) {
+        searchInput.addEventListener('input', function(e) {
+            renderPTGuides(e.target.value);
+        });
+    }
+    
+    const loginBtn = document.getElementById('ptAdminLoginBtn');
+    const logoutBtn = document.getElementById('ptAdminLogoutBtn');
+    if (loginBtn) loginBtn.addEventListener('click', handlePTAdminLogin);
+    if (logoutBtn) logoutBtn.addEventListener('click', handlePTAdminLogout);
+}
+
+// Make PT functions available globally
+window.viewPTGuide = viewPTGuide;
+window.downloadPTGuide = downloadPTGuide;
+window.renamePTGuide = renamePTGuide;
+window.deletePTGuide = deletePTGuide;
+window.handlePtUploadClick = handlePtUploadClick;
+window.showAddRecommendationModal = showAddRecommendationModal;
+window.closeRecommendationModal = closeRecommendationModal;
+window.editRecommendation = editRecommendation;
+window.saveRecommendation = saveRecommendation;
+window.deletePTRecommendation = deletePTRecommendation;
 
 
