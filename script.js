@@ -9,13 +9,45 @@ let shiftAssignments = {
 // Hard-coded base providers
 const BASE_PROVIDERS = [
     { id: 1, name: 'Ryan', patientsPerHour: 2, submitted: true, isBase: true },
-    { id: 2, name: 'Lauren', patientsPerHour: 2, submitted: true, isBase: true },
-    { id: 3, name: 'Kristy', patientsPerHour: 1.8, submitted: true, isBase: true },
-    { id: 4, name: 'Johny', patientsPerHour: 1.9, submitted: true, isBase: true },
-    { id: 5, name: 'Mikaela', patientsPerHour: 2, submitted: true, isBase: true },
-    { id: 6, name: 'Dan', patientsPerHour: 1.8, submitted: true, isBase: true },
-    { id: 7, name: 'Nicole', patientsPerHour: 2.2, submitted: true, isBase: true }
+    { id: 2, name: 'Kristy', patientsPerHour: 1.8, submitted: true, isBase: true },
+    { id: 3, name: 'Mikaela', patientsPerHour: 2, submitted: true, isBase: true },
+    { id: 4, name: 'Dan', patientsPerHour: 1.8, submitted: true, isBase: true },
+    { id: 5, name: 'Johny', patientsPerHour: 1.9, submitted: true, isBase: true },
+    { id: 6, name: 'Nicole', patientsPerHour: 2.2, submitted: true, isBase: true },
+    { id: 7, name: 'Lauren', patientsPerHour: 2, submitted: true, isBase: true }
 ];
+
+// Get the desired order for providers based on BASE_PROVIDERS
+function getProviderOrder() {
+    const order = {};
+    BASE_PROVIDERS.forEach((provider, index) => {
+        order[provider.name.toLowerCase()] = index;
+    });
+    return order;
+}
+
+// Sort providers according to BASE_PROVIDERS order
+function sortProvidersByBaseOrder(providersList) {
+    const order = getProviderOrder();
+    return [...providersList].sort((a, b) => {
+        const aIsBase = a.isBase || false;
+        const bIsBase = b.isBase || false;
+        
+        // Base providers first
+        if (aIsBase && !bIsBase) return -1;
+        if (!aIsBase && bIsBase) return 1;
+        
+        // Both are base providers - sort by BASE_PROVIDERS order
+        if (aIsBase && bIsBase) {
+            const aOrder = order[a.name.toLowerCase()] !== undefined ? order[a.name.toLowerCase()] : 999;
+            const bOrder = order[b.name.toLowerCase()] !== undefined ? order[b.name.toLowerCase()] : 999;
+            return aOrder - bOrder;
+        }
+        
+        // Both are temporary - newest first
+        return b.id - a.id;
+    });
+}
 
 // Load data from localStorage
 function loadData() {
@@ -226,15 +258,8 @@ function renderProviders(skipAutoAdd = false) {
         return; // No providers to render
     }
     
-    // Sort providers: base providers first (in original order), then temporary ones
-    const sortedProviders = [...providers].sort((a, b) => {
-        const aIsBase = a.isBase || false;
-        const bIsBase = b.isBase || false;
-        if (aIsBase && !bIsBase) return -1;
-        if (!aIsBase && bIsBase) return 1;
-        if (aIsBase && bIsBase) return a.id - b.id; // Base providers in original order
-        return b.id - a.id; // Temporary providers: newest first
-    });
+    // Sort providers: base providers first (in BASE_PROVIDERS order), then temporary ones
+    const sortedProviders = sortProvidersByBaseOrder(providers);
     
     sortedProviders.forEach(provider => {
         const providerRow = document.createElement('div');
@@ -342,8 +367,9 @@ function updateShiftAssignments() {
             emptyOption.textContent = 'Select a provider...';
             select.appendChild(emptyOption);
             
-            // Add providers that aren't already assigned to this shift
-            providers.forEach(provider => {
+            // Add providers that aren't already assigned to this shift (sorted by BASE_PROVIDERS order)
+            const sortedProviders = sortProvidersByBaseOrder(providers);
+            sortedProviders.forEach(provider => {
                 const isAssigned = shiftAssignments[shift] && shiftAssignments[shift].includes(provider.id);
                 if (!isAssigned) {
                     const option = document.createElement('option');
