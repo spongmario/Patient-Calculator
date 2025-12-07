@@ -1137,6 +1137,7 @@ function renderPathways(filter = '') {
                             <div class="pathway-list-name">${escapeHtml(displayName)}</div>
                         </div>
                         <div class="pathway-list-actions" onclick="event.stopPropagation()">
+                            <button class="btn btn-primary btn-small" onclick="viewPathway(${actualIndex})">View</button>
                             <button class="btn btn-secondary btn-small" onclick="downloadPathway(${actualIndex})">Download</button>
                         </div>
                     </div>
@@ -1821,6 +1822,7 @@ function renderPTGuides(filter = '') {
                             ${languageButton}
                         </div>
                         <div class="pathway-list-actions" onclick="event.stopPropagation()">
+                            <button class="btn btn-primary btn-small" onclick="viewPTGuideByLanguage('${escapedBaseName}', '${defaultLanguage}')">View</button>
                             <button class="btn btn-secondary btn-small" onclick="downloadPTGuide(${defaultIndex})">Download</button>
                         </div>
                     </div>
@@ -2186,6 +2188,7 @@ function renderHandouts(filter = '') {
                             <div class="pathway-list-name">${escapeHtml(displayName)}</div>
                         </div>
                         <div class="pathway-list-actions" onclick="event.stopPropagation()">
+                            <button class="btn btn-primary btn-small" onclick="viewHandout(${actualIndex})">View</button>
                             <button class="btn btn-secondary btn-small" onclick="downloadHandout(${actualIndex})">Download</button>
                         </div>
                     </div>
