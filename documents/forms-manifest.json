@@ -1,5 +1,15 @@
 [
   {
+    "name": "Project Access",
+    "file": "handouts/Project Access.pdf",
+    "type": "pdf"
+  },
+  {
+    "name": "Project Access (Spanish)",
+    "file": "handouts/Project Access Spanish.pdf",
+    "type": "pdf"
+  },
+  {
     "name": "Sports Physical Form",
     "file": "handouts/Sports Physical.pdf",
     "type": "pdf"
