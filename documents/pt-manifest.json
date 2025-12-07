@@ -18,6 +18,16 @@
     "name": "Plantar Fasciitis",
     "file": "pt-guides/Plantar Fasciitis.pdf",
     "type": "pdf"
+  },
+  {
+    "name": "Cervical Radiculopathy",
+    "file": "pt-guides/Cervical Radiculopathy Exercises.pdf",
+    "type": "pdf"
+  },
+  {
+    "name": "TMJ",
+    "file": "pt-guides/TMJ Exercises.pdf",
+    "type": "pdf"
   }
 ]
 
