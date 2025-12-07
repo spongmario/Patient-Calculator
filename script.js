@@ -826,6 +826,11 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Initialize Clinical Pathways
     initializePathways();
+    
+    // Initialize DB stores for handouts
+    initDB().then(() => {
+        initHandoutsDB().catch(err => console.error('Error initializing handouts DB:', err));
+    }).catch(err => console.error('Error initializing DB:', err));
 });
 
 // ==================== Navigation System ====================
@@ -870,6 +875,11 @@ function navigateToPage(pageId) {
     // Initialize PT when navigating to physical therapy page
     if (pageId === 'physical-therapy') {
         initializePT();
+    }
+    
+    // Initialize Handouts when navigating to patient resources page
+    if (pageId === 'patient-resources') {
+        initializeHandouts();
     }
 }
 
@@ -949,6 +959,12 @@ function initDB() {
                 const recStore = db.createObjectStore('ptRecommendations', { keyPath: 'id' });
                 recStore.createIndex('title', 'title', { unique: false });
                 console.log('IndexedDB PT recommendations store created');
+            }
+            // Create handouts store if it doesn't exist
+            if (!db.objectStoreNames.contains('handouts')) {
+                const handoutsStore = db.createObjectStore('handouts', { keyPath: 'id' });
+                handoutsStore.createIndex('name', 'name', { unique: false });
+                console.log('IndexedDB handouts store created');
             }
         };
     });
@@ -1353,7 +1369,8 @@ let ptGuides = [];
 // Store custom display names (admin-only feature)
 let customDisplayNames = {
     pathways: {},
-    ptGuides: {}
+    ptGuides: {},
+    handouts: {}
 };
 
 // Initialize PT DB stores
@@ -1458,10 +1475,10 @@ async function loadCustomDisplayNames() {
             customDisplayNames = data;
             console.log('Custom display names loaded:', customDisplayNames);
             console.log('Pathways keys:', Object.keys(customDisplayNames.pathways || {}));
-        } else {
-            console.warn('Custom display names file not found (status:', response.status, '), using defaults');
+    } else {
+        console.warn('Custom display names file not found (status:', response.status, '), using defaults');
             if (!customDisplayNames) {
-                customDisplayNames = { pathways: {}, ptGuides: {} };
+                customDisplayNames = { pathways: {}, ptGuides: {}, handouts: {} };
             }
         }
     } catch (error) {
@@ -1476,12 +1493,12 @@ async function loadCustomDisplayNames() {
             } catch (e) {
                 console.error('Error parsing localStorage custom names:', e);
                 if (!customDisplayNames) {
-                    customDisplayNames = { pathways: {}, ptGuides: {} };
+                    customDisplayNames = { pathways: {}, ptGuides: {}, handouts: {} };
                 }
             }
         } else {
             if (!customDisplayNames) {
-                customDisplayNames = { pathways: {}, ptGuides: {} };
+                customDisplayNames = { pathways: {}, ptGuides: {}, handouts: {} };
             }
         }
     }
@@ -1493,16 +1510,28 @@ async function loadCustomDisplayNames() {
     if (!customDisplayNames.ptGuides) {
         customDisplayNames.ptGuides = {};
     }
+    if (!customDisplayNames.handouts) {
+        customDisplayNames.handouts = {};
+    }
 }
 
 // Get display name for a file (custom name or original)
 function getDisplayName(filePath, originalName, type) {
-    // filePath is like "pathways/file.pdf" or "pt-guides/file.pdf"
-    const category = type === 'pathway' ? 'pathways' : 'ptGuides';
+    // filePath is like "pathways/file.pdf" or "pt-guides/file.pdf" or "handouts/file.pdf"
+    let category;
+    if (type === 'pathway') {
+        category = 'pathways';
+    } else if (type === 'pt') {
+        category = 'ptGuides';
+    } else if (type === 'handout') {
+        category = 'handouts';
+    } else {
+        category = 'pathways'; // default
+    }
     
     // Ensure customDisplayNames is initialized
     if (!customDisplayNames) {
-        customDisplayNames = { pathways: {}, ptGuides: {} };
+        customDisplayNames = { pathways: {}, ptGuides: {}, handouts: {} };
     }
     if (!customDisplayNames[category]) {
         customDisplayNames[category] = {};
@@ -1988,6 +2017,301 @@ window.viewPTGuideByLanguage = viewPTGuideByLanguage;
 window.downloadPTGuide = downloadPTGuide;
 window.renamePTGuide = renamePTGuide;
 window.deletePTGuide = deletePTGuide;
+
+// ==================== Patient Resources (Handouts) System ====================
+
+const HANDOUTS_STORE_NAME = 'handouts';
+let handouts = [];
+
+// Initialize Handouts DB stores
+function initHandoutsDB() {
+    return new Promise((resolve, reject) => {
+        if (!db) {
+            initDB().then(() => {
+                initHandoutsStores().then(resolve).catch(reject);
+            }).catch(reject);
+        } else {
+            initHandoutsStores().then(resolve).catch(reject);
+        }
+    });
+}
+
+function initHandoutsStores() {
+    return new Promise((resolve, reject) => {
+        const needsHandoutsStore = !db.objectStoreNames.contains(HANDOUTS_STORE_NAME);
+        
+        if (needsHandoutsStore) {
+            const currentVersion = db.version;
+            db.close();
+            const newVersion = currentVersion + 1;
+            const request = indexedDB.open(DB_NAME, newVersion);
+            
+            request.onupgradeneeded = (event) => {
+                const db = event.target.result;
+                if (needsHandoutsStore && !db.objectStoreNames.contains(HANDOUTS_STORE_NAME)) {
+                    const objectStore = db.createObjectStore(HANDOUTS_STORE_NAME, { keyPath: 'id' });
+                    objectStore.createIndex('name', 'name', { unique: false });
+                    console.log('IndexedDB handouts store created');
+                }
+            };
+            
+            request.onsuccess = () => {
+                db = request.result;
+                resolve(db);
+            };
+            
+            request.onerror = () => {
+                console.error('Error upgrading DB:', request.error);
+                reject(request.error);
+            };
+        } else {
+            resolve(db);
+        }
+    });
+}
+
+async function loadHandouts() {
+    try {
+        // Load manifest from GitHub
+        const manifestUrl = `${GITHUB_BASE_URL}/documents/handouts-manifest.json`;
+        console.log('Loading handouts from:', manifestUrl);
+        
+        const response = await fetch(manifestUrl);
+        if (!response.ok) {
+            throw new Error(`Failed to load handouts manifest: ${response.statusText}`);
+        }
+        
+        const manifest = await response.json();
+        await loadCustomDisplayNames(); // Load custom names from GitHub
+        handouts = manifest.map((item, index) => {
+            return {
+                id: index,
+                file: item.file,
+                name: item.name,
+                displayName: getDisplayName(item.file, item.name, 'handout'),
+                fileType: item.type || getFileExtension(item.name),
+                url: `${GITHUB_BASE_URL}/documents/${item.file}`
+            };
+        });
+        
+        console.log('Loaded', handouts.length, 'handouts from GitHub');
+        renderHandouts();
+        return handouts;
+    } catch (error) {
+        console.error('Error loading handouts:', error);
+        handouts = [];
+        renderHandouts();
+    }
+}
+
+async function saveHandout(handout) {
+    try {
+        if (!db) await initDB();
+        if (!db.objectStoreNames.contains(HANDOUTS_STORE_NAME)) await initHandoutsDB();
+        
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([HANDOUTS_STORE_NAME], 'readwrite');
+            const store = transaction.objectStore(HANDOUTS_STORE_NAME);
+            const request = store.put(handout);
+            
+            request.onsuccess = () => resolve();
+            request.onerror = () => reject(request.error);
+        });
+    } catch (error) {
+        throw error;
+    }
+}
+
+function renderHandouts(filter = '') {
+    const container = document.getElementById('handoutsList');
+    if (!container) return;
+    
+    // Recalculate display names to ensure they're up to date
+    handouts.forEach(handout => {
+        handout.displayName = getDisplayName(handout.file, handout.name, 'handout');
+    });
+    
+    let filteredHandouts = [...handouts];
+    
+    // Apply filter if provided
+    if (filter) {
+        const searchLower = filter.toLowerCase();
+        filteredHandouts = filteredHandouts.filter(h => 
+            (h.displayName || h.name).toLowerCase().includes(searchLower) ||
+            h.name.toLowerCase().includes(searchLower)
+        );
+    }
+    
+    // Sort alphabetically by display name
+    filteredHandouts.sort((a, b) => {
+        const nameA = (a.displayName || a.name).toLowerCase();
+        const nameB = (b.displayName || b.name).toLowerCase();
+        return nameA.localeCompare(nameB);
+    });
+    
+    if (filteredHandouts.length === 0 && handouts.length === 0) {
+        container.innerHTML = `
+            <div class="empty-pathways">
+                <div class="empty-icon">📢</div>
+                <h3>No Patient Resources Yet</h3>
+                <p>Patient resources are managed by administrators. Contact your administrator to add documents.</p>
+            </div>
+        `;
+        return;
+    }
+    
+    if (filteredHandouts.length === 0) {
+        container.innerHTML = `
+            <div class="empty-pathways">
+                <div class="empty-icon">🔍</div>
+                <h3>No Resources Found</h3>
+                <p>No resources match your search criteria.</p>
+            </div>
+        `;
+        return;
+    }
+    
+    // Create list HTML
+    container.innerHTML = `
+        <div class="pathway-list-container">
+            ${filteredHandouts.map((handout) => {
+                const fileIcon = getFileIcon(handout.fileType);
+                // Find the actual index in the original handouts array
+                const actualIndex = handouts.findIndex(h => h.id === handout.id);
+                const displayName = handout.displayName || handout.name;
+                return `
+                    <div class="pathway-list-item" onclick="viewHandout(${actualIndex})">
+                        <div class="pathway-list-icon">${fileIcon}</div>
+                        <div class="pathway-list-info">
+                            <div class="pathway-list-name">${escapeHtml(displayName)}</div>
+                        </div>
+                        <div class="pathway-list-actions" onclick="event.stopPropagation()">
+                            <button class="btn btn-secondary btn-small" onclick="downloadHandout(${actualIndex})">Download</button>
+                        </div>
+                    </div>
+                `;
+            }).join('')}
+        </div>
+    `;
+}
+
+function viewHandout(index) {
+    const handout = handouts[index];
+    if (!handout) return;
+    
+    // Open document from GitHub URL
+    const newWindow = window.open();
+    if (handout.fileType === 'pdf') {
+        // For PDFs, embed directly
+        newWindow.document.write(`
+            <html>
+                <head><title>${escapeHtml(handout.name)}</title></head>
+                <body style="margin:0;padding:0;">
+                    <embed src="${handout.url}" type="application/pdf" width="100%" height="100%" style="position:absolute;top:0;left:0;width:100%;height:100vh;" />
+                </body>
+            </html>
+        `);
+    } else {
+        // For other files, try to display or download
+        newWindow.document.write(`
+            <html>
+                <head><title>${escapeHtml(handout.name)}</title></head>
+                <body style="margin:20px;font-family:Arial;">
+                    <h2>${escapeHtml(handout.name)}</h2>
+                    <p>This file type cannot be displayed in the browser. Please download it to view.</p>
+                    <button onclick="window.location.href='${handout.url}'" download="${escapeHtml(handout.name)}" style="padding:10px 20px;background:#667eea;color:white;border:none;border-radius:6px;cursor:pointer;">
+                        Download File
+                    </button>
+                </body>
+            </html>
+        `);
+    }
+}
+
+function downloadHandout(index) {
+    const handout = handouts[index];
+    if (!handout) return;
+    
+    // Direct download from GitHub
+    const link = document.createElement('a');
+    link.href = handout.url;
+    link.download = handout.name;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+async function renameHandout(index) {
+    const handout = handouts[index];
+    if (!handout) return;
+    
+    const currentName = handout.displayName || handout.name;
+    const newName = prompt(`Rename "${currentName}" to:`, currentName);
+    
+    if (!newName || newName.trim() === '') {
+        return; // User cancelled or entered empty name
+    }
+    
+    const trimmedName = newName.trim();
+    if (trimmedName === currentName) {
+        return; // Name unchanged
+    }
+    
+    // Update custom display name in memory
+    if (!customDisplayNames.handouts) {
+        customDisplayNames.handouts = {};
+    }
+    customDisplayNames.handouts[handout.file] = trimmedName;
+    
+    // Update the handout's display name
+    handout.displayName = trimmedName;
+    
+    // Show updated JSON for user to copy
+    const updatedJSON = generateCustomNamesJSON();
+    const modal = document.createElement('div');
+    modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:10000;display:flex;align-items:center;justify-content:center;';
+    modal.innerHTML = `
+        <div style="background:white;padding:30px;border-radius:12px;max-width:600px;max-height:80vh;overflow:auto;">
+            <h3 style="margin-top:0;color:#667eea;">Update custom-display-names.json</h3>
+            <p>Copy this JSON and update <code>documents/custom-display-names.json</code> in your repository:</p>
+            <textarea readonly style="width:100%;height:200px;font-family:monospace;font-size:12px;padding:10px;border:2px solid #ddd;border-radius:6px;">${updatedJSON}</textarea>
+            <div style="margin-top:15px;display:flex;gap:10px;justify-content:flex-end;">
+                <button onclick="this.closest('div[style*=\"position:fixed\"]').remove();navigator.clipboard.writeText(\`${updatedJSON.replace(/`/g, '\\`')}\`);alert('Copied to clipboard!');" style="padding:10px 20px;background:#667eea;color:white;border:none;border-radius:6px;cursor:pointer;">Copy & Close</button>
+                <button onclick="this.closest('div[style*=\"position:fixed\"]').remove();" style="padding:10px 20px;background:#718096;color:white;border:none;border-radius:6px;cursor:pointer;">Close</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+    
+    // Also save to localStorage as temporary cache
+    localStorage.setItem('chcCustomDisplayNames', JSON.stringify(customDisplayNames));
+    
+    // Re-render (preserve current search filter)
+    const searchInput = document.getElementById('handoutsSearch');
+    const currentFilter = searchInput ? searchInput.value : '';
+    renderHandouts(currentFilter);
+}
+
+async function deleteHandout(index) {
+    alert('To delete documents, remove them from the handouts-manifest.json file and delete the file from the documents/handouts folder in the repository.');
+}
+
+async function initializeHandouts() {
+    await loadHandouts();
+    
+    const searchInput = document.getElementById('handoutsSearch');
+    if (searchInput) {
+        searchInput.addEventListener('input', function(e) {
+            renderHandouts(e.target.value);
+        });
+    }
+}
+
+// Make handouts functions available globally
+window.viewHandout = viewHandout;
+window.downloadHandout = downloadHandout;
+window.renameHandout = renameHandout;
+window.deleteHandout = deleteHandout;
 
 
 

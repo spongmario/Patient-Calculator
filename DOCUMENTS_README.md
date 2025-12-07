@@ -8,8 +8,10 @@ All documents are stored in the `documents/` folder and managed through GitHub. 
 documents/
 ├── pathways/              # Clinical pathway PDFs
 ├── pt-guides/            # Physical therapy guide PDFs
+├── handouts/             # Patient resources, flyers, and handouts
 ├── pathways-manifest.json # List of clinical pathways
 ├── pt-manifest.json      # List of PT guides
+├── handouts-manifest.json # List of patient resources
 └── custom-display-names.json # Custom display names for files
 ```
 
@@ -37,6 +39,17 @@ documents/
 }
 ```
 
+### Patient Resources (Handouts)
+1. Add your PDF file to `documents/handouts/`
+2. Edit `documents/handouts-manifest.json` and add an entry:
+```json
+{
+  "name": "Your Handout.pdf",
+  "file": "handouts/Your Handout.pdf",
+  "type": "pdf"
+}
+```
+
 ## Custom Display Names
 
 Admins can rename how documents appear to users without changing the actual file name.
@@ -56,6 +69,9 @@ The JSON structure:
   },
   "ptGuides": {
     "pt-guides/Your File.pdf": "Custom Display Name"
+  },
+  "handouts": {
+    "handouts/Your File.pdf": "Custom Display Name"
   }
 }
 ```
