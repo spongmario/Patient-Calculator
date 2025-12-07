@@ -856,6 +856,10 @@ function navigateToPage(pageId) {
         const currentFilter = searchInput ? searchInput.value : '';
         // Reload custom names to ensure they're fresh, then render
         loadCustomDisplayNames().then(() => {
+            // Force recalculation of all display names
+            pathways.forEach(pathway => {
+                pathway.displayName = getDisplayName(pathway.file, pathway.name, 'pathway');
+            });
             renderPathways(currentFilter);
         }).catch(() => {
             // If loading fails, still render with what we have
@@ -1452,6 +1456,8 @@ async function loadCustomDisplayNames() {
         if (response.ok) {
             const data = await response.json();
             customDisplayNames = data;
+            console.log('Custom display names loaded:', customDisplayNames);
+            console.log('Pathways keys:', Object.keys(customDisplayNames.pathways || {}));
         } else {
             console.warn('Custom display names file not found (status:', response.status, '), using defaults');
             if (!customDisplayNames) {
@@ -1502,9 +1508,25 @@ function getDisplayName(filePath, originalName, type) {
         customDisplayNames[category] = {};
     }
     
+    // Debug for Measles file
+    if (filePath.includes('Measles')) {
+        console.log('getDisplayName called for Measles:', {
+            filePath,
+            category,
+            availableKeys: Object.keys(customDisplayNames[category] || {}),
+            customDisplayNames: customDisplayNames[category]
+        });
+    }
+    
     const customName = customDisplayNames[category][filePath];
     if (customName) {
+        if (filePath.includes('Measles')) {
+            console.log('Found custom name for Measles:', customName);
+        }
         return customName;
+    }
+    if (filePath.includes('Measles')) {
+        console.log('No custom name found for Measles, using original:', originalName);
     }
     return originalName;
 }
