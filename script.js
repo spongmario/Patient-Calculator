@@ -854,7 +854,13 @@ function navigateToPage(pageId) {
     if (pageId === 'pathways') {
         const searchInput = document.getElementById('pathwaySearch');
         const currentFilter = searchInput ? searchInput.value : '';
-        renderPathways(currentFilter);
+        // Reload custom names to ensure they're fresh, then render
+        loadCustomDisplayNames().then(() => {
+            renderPathways(currentFilter);
+        }).catch(() => {
+            // If loading fails, still render with what we have
+            renderPathways(currentFilter);
+        });
     }
     
     // Initialize PT when navigating to physical therapy page
@@ -1047,21 +1053,27 @@ function renderPathways(filter = '') {
     const container = document.getElementById('pathwaysList');
     if (!container) return;
     
+    // Recalculate display names to ensure they're up to date
+    pathways.forEach(pathway => {
+        pathway.displayName = getDisplayName(pathway.file, pathway.name, 'pathway');
+    });
+    
     let filteredPathways = [...pathways]; // Create a copy to avoid mutating original
     
     // Apply filter if provided
     if (filter) {
         const searchLower = filter.toLowerCase();
         filteredPathways = filteredPathways.filter(p => 
+            (p.displayName || p.name).toLowerCase().includes(searchLower) ||
             p.name.toLowerCase().includes(searchLower) ||
             (p.description && p.description.toLowerCase().includes(searchLower))
         );
     }
     
-    // Sort alphabetically by name
+    // Sort alphabetically by display name
     filteredPathways.sort((a, b) => {
-        const nameA = a.name.toLowerCase();
-        const nameB = b.name.toLowerCase();
+        const nameA = (a.displayName || a.name).toLowerCase();
+        const nameB = (b.displayName || b.name).toLowerCase();
         return nameA.localeCompare(nameB);
     });
     
@@ -1097,11 +1109,12 @@ function renderPathways(filter = '') {
                 const fileIcon = getFileIcon(pathway.fileType);
                 // Find the actual index in the original pathways array
                 const actualIndex = pathways.findIndex(p => p.id === pathway.id);
+                const displayName = pathway.displayName || pathway.name;
                 return `
                     <div class="pathway-list-item" onclick="viewPathway(${actualIndex})">
                         <div class="pathway-list-icon">${fileIcon}</div>
                         <div class="pathway-list-info">
-                            <div class="pathway-list-name">${escapeHtml(pathway.displayName || pathway.name)}</div>
+                            <div class="pathway-list-name">${escapeHtml(displayName)}</div>
                         </div>
                         <div class="pathway-list-actions" onclick="event.stopPropagation()">
                             <button class="btn btn-secondary btn-small" onclick="downloadPathway(${actualIndex})">Download</button>
@@ -1433,15 +1446,17 @@ async function loadPTGuides() {
 async function loadCustomDisplayNames() {
     try {
         const namesUrl = `${GITHUB_BASE_URL}/documents/custom-display-names.json`;
+        console.log('Loading custom display names from:', namesUrl);
         const response = await fetch(namesUrl);
         
         if (response.ok) {
             const data = await response.json();
             customDisplayNames = data;
-            console.log('Loaded custom display names from GitHub:', customDisplayNames);
         } else {
-            console.log('Custom display names file not found, using defaults');
-            customDisplayNames = { pathways: {}, ptGuides: {} };
+            console.warn('Custom display names file not found (status:', response.status, '), using defaults');
+            if (!customDisplayNames) {
+                customDisplayNames = { pathways: {}, ptGuides: {} };
+            }
         }
     } catch (error) {
         console.error('Error loading custom display names:', error);
@@ -1451,10 +1466,26 @@ async function loadCustomDisplayNames() {
             try {
                 const parsed = JSON.parse(saved);
                 customDisplayNames = parsed;
+                console.log('✓ Loaded custom display names from localStorage:', customDisplayNames);
             } catch (e) {
+                console.error('Error parsing localStorage custom names:', e);
+                if (!customDisplayNames) {
+                    customDisplayNames = { pathways: {}, ptGuides: {} };
+                }
+            }
+        } else {
+            if (!customDisplayNames) {
                 customDisplayNames = { pathways: {}, ptGuides: {} };
             }
         }
+    }
+    
+    // Ensure structure exists
+    if (!customDisplayNames.pathways) {
+        customDisplayNames.pathways = {};
+    }
+    if (!customDisplayNames.ptGuides) {
+        customDisplayNames.ptGuides = {};
     }
 }
 
@@ -1462,11 +1493,20 @@ async function loadCustomDisplayNames() {
 function getDisplayName(filePath, originalName, type) {
     // filePath is like "pathways/file.pdf" or "pt-guides/file.pdf"
     const category = type === 'pathway' ? 'pathways' : 'ptGuides';
-    const customName = customDisplayNames[category]?.[filePath];
-    if (customName) {
-        console.log(`Using custom display name: "${customName}" for "${filePath}"`);
+    
+    // Ensure customDisplayNames is initialized
+    if (!customDisplayNames) {
+        customDisplayNames = { pathways: {}, ptGuides: {} };
     }
-    return customName || originalName;
+    if (!customDisplayNames[category]) {
+        customDisplayNames[category] = {};
+    }
+    
+    const customName = customDisplayNames[category][filePath];
+    if (customName) {
+        return customName;
+    }
+    return originalName;
 }
 
 // Generate updated JSON content for the custom-display-names.json file
