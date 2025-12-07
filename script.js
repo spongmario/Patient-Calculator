@@ -850,10 +850,8 @@ function navigateToPage(pageId) {
         }
     });
     
-    // Check authentication when navigating to pathways page
+    // Re-render pathways when navigating to pathways page
     if (pageId === 'pathways') {
-        checkAuthentication();
-        // Re-render pathways to show/hide admin buttons based on auth status
         const searchInput = document.getElementById('pathwaySearch');
         const currentFilter = searchInput ? searchInput.value : '';
         renderPathways(currentFilter);
@@ -880,17 +878,33 @@ window.navigateToPage = navigateToPage;
 
 // ==================== Clinical Pathways System ====================
 
-// Admin password - Change this to your desired password
-const ADMIN_PASSWORD = 'CHC2024'; // Change this password!
+// GitHub configuration - Update this with your repository URL
+// For GitHub Pages, use the raw.githubusercontent.com URL:
+// Format: https://raw.githubusercontent.com/USERNAME/REPO-NAME/BRANCH
+// Example: https://raw.githubusercontent.com/yourusername/Patient-Calculator/main
+// 
+// For local development, this will auto-detect. For GitHub Pages, uncomment and set:
+// const GITHUB_BASE_URL = 'https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main';
+
+// Auto-detect: if on GitHub Pages, use raw.githubusercontent.com, otherwise use local path
+let GITHUB_BASE_URL;
+if (window.location.hostname.includes('github.io') || window.location.hostname.includes('github.com')) {
+    // Extract repo info from GitHub Pages URL
+    const pathParts = window.location.pathname.split('/').filter(p => p);
+    if (pathParts.length >= 2) {
+        const username = pathParts[0];
+        const repo = pathParts[1];
+        GITHUB_BASE_URL = `https://raw.githubusercontent.com/${username}/${repo}/main`;
+    } else {
+        // Fallback to local
+        GITHUB_BASE_URL = window.location.origin + window.location.pathname.replace(/\/[^/]*$/, '');
+    }
+} else {
+    // Local development
+    GITHUB_BASE_URL = window.location.origin + window.location.pathname.replace(/\/[^/]*$/, '');
+}
 
 let pathways = [];
-let isAuthenticated = false;
-let db = null;
-
-// IndexedDB setup
-const DB_NAME = 'CHCToolkitDB';
-const DB_VERSION = 2; // Updated to 2 to include PT stores
-const STORE_NAME = 'pathways';
 
 function initDB() {
     return new Promise((resolve, reject) => {
@@ -932,65 +946,46 @@ function initDB() {
 
 async function loadPathways() {
     try {
-        if (!db) {
-            await initDB();
+        // Load manifest from GitHub
+        const manifestUrl = `${GITHUB_BASE_URL}/documents/pathways-manifest.json`;
+        console.log('Loading pathways from:', manifestUrl);
+        
+        const response = await fetch(manifestUrl);
+        if (!response.ok) {
+            throw new Error(`Failed to load pathways manifest: ${response.statusText}`);
         }
         
-        return new Promise((resolve, reject) => {
-            const transaction = db.transaction([STORE_NAME], 'readonly');
-            const store = transaction.objectStore(STORE_NAME);
-            const request = store.getAll();
-            
-            request.onsuccess = async () => {
-                pathways = request.result || [];
-                
-                // Migrate from localStorage if IndexedDB is empty but localStorage has data
-                if (pathways.length === 0) {
-                    const oldData = localStorage.getItem('chcPathways');
-                    if (oldData) {
-                        try {
-                            const oldPathways = JSON.parse(oldData);
-                            console.log('Migrating', oldPathways.length, 'pathways from localStorage to IndexedDB');
-                            
-                            // Convert base64 data URLs to ArrayBuffers and save to IndexedDB
-                            for (const oldPathway of oldPathways) {
-                                if (oldPathway.data && typeof oldPathway.data === 'string' && oldPathway.data.startsWith('data:')) {
-                                    // Convert base64 data URL to ArrayBuffer
-                                    const base64Data = oldPathway.data.split(',')[1];
-                                    const binaryString = atob(base64Data);
-                                    const bytes = new Uint8Array(binaryString.length);
-                                    for (let i = 0; i < binaryString.length; i++) {
-                                        bytes[i] = binaryString.charCodeAt(i);
-                                    }
-                                    oldPathway.data = bytes.buffer;
-                                }
-                                await savePathway(oldPathway);
-                                pathways.push(oldPathway);
-                            }
-                            
-                            // Clear old localStorage data
-                            localStorage.removeItem('chcPathways');
-                            console.log('Migration complete');
-                        } catch (migError) {
-                            console.error('Migration error:', migError);
-                        }
-                    }
-                }
-                
-                console.log('Loaded', pathways.length, 'pathways from IndexedDB');
-                renderPathways();
-                resolve(pathways);
-            };
-            
-            request.onerror = () => {
-                console.error('Error loading pathways:', request.error);
-                reject(request.error);
+        const manifest = await response.json();
+        await loadCustomDisplayNames(); // Load custom names from GitHub
+        pathways = manifest.map((item, index) => {
+            return {
+                id: index,
+                file: item.file,
+                name: item.name,
+                displayName: getDisplayName(item.file, item.name, 'pathway'),
+                fileType: item.type || getFileExtension(item.name),
+                url: `${GITHUB_BASE_URL}/documents/${item.file}`
             };
         });
+        
+        console.log('Loaded', pathways.length, 'pathways from GitHub');
+        renderPathways();
+        return pathways;
     } catch (error) {
-        console.error('Error initializing DB:', error);
+        console.error('Error loading pathways:', error);
         pathways = [];
         renderPathways();
+        // Show user-friendly error
+        const container = document.getElementById('pathwaysList');
+        if (container) {
+            container.innerHTML = `
+                <div class="empty-pathways">
+                    <div class="empty-icon">⚠️</div>
+                    <h3>Unable to Load Documents</h3>
+                    <p>Could not load pathways from GitHub. Please check the repository configuration.</p>
+                </div>
+            `;
+        }
     }
 }
 
@@ -1106,14 +1101,10 @@ function renderPathways(filter = '') {
                     <div class="pathway-list-item" onclick="viewPathway(${actualIndex})">
                         <div class="pathway-list-icon">${fileIcon}</div>
                         <div class="pathway-list-info">
-                            <div class="pathway-list-name">${escapeHtml(pathway.name)}</div>
+                            <div class="pathway-list-name">${escapeHtml(pathway.displayName || pathway.name)}</div>
                         </div>
                         <div class="pathway-list-actions" onclick="event.stopPropagation()">
                             <button class="btn btn-secondary btn-small" onclick="downloadPathway(${actualIndex})">Download</button>
-                            ${isAuthenticated ? `
-                                <button class="btn btn-primary btn-small" onclick="renamePathway(${actualIndex})">Rename</button>
-                                <button class="btn btn-danger btn-small" onclick="deletePathway(${actualIndex})">Delete</button>
-                            ` : ''}
                         </div>
                     </div>
                 `;
@@ -1219,19 +1210,15 @@ function viewPathway(index) {
     const pathway = pathways[index];
     if (!pathway) return;
     
-    // Convert ArrayBuffer to blob URL for viewing
-    const blob = new Blob([pathway.data], { type: pathway.mimeType || 'application/octet-stream' });
-    const blobUrl = URL.createObjectURL(blob);
-    
-    // Create a new window/tab to view the document
+    // Open document from GitHub URL
     const newWindow = window.open();
-    if (pathway.mimeType === 'application/pdf' || pathway.fileType === 'pdf') {
+    if (pathway.fileType === 'pdf') {
         // For PDFs, embed directly
         newWindow.document.write(`
             <html>
                 <head><title>${escapeHtml(pathway.name)}</title></head>
                 <body style="margin:0;padding:0;">
-                    <embed src="${blobUrl}" type="application/pdf" width="100%" height="100%" style="position:absolute;top:0;left:0;width:100%;height:100vh;" />
+                    <embed src="${pathway.url}" type="application/pdf" width="100%" height="100%" style="position:absolute;top:0;left:0;width:100%;height:100vh;" />
                 </body>
             </html>
         `);
@@ -1243,213 +1230,86 @@ function viewPathway(index) {
                 <body style="margin:20px;font-family:Arial;">
                     <h2>${escapeHtml(pathway.name)}</h2>
                     <p>This file type cannot be displayed in the browser. Please download it to view.</p>
-                    <button onclick="window.location.href='${blobUrl}'" download="${escapeHtml(pathway.name)}" style="padding:10px 20px;background:#667eea;color:white;border:none;border-radius:6px;cursor:pointer;">
+                    <button onclick="window.location.href='${pathway.url}'" download="${escapeHtml(pathway.name)}" style="padding:10px 20px;background:#667eea;color:white;border:none;border-radius:6px;cursor:pointer;">
                         Download File
                     </button>
                 </body>
             </html>
         `);
     }
-    
-    // Clean up blob URL when window closes
-    newWindow.addEventListener('beforeunload', () => {
-        URL.revokeObjectURL(blobUrl);
-    });
 }
 
 function downloadPathway(index) {
     const pathway = pathways[index];
     if (!pathway) return;
     
-    // Convert ArrayBuffer to blob for download
-    const blob = new Blob([pathway.data], { type: pathway.mimeType || 'application/octet-stream' });
-    const blobUrl = URL.createObjectURL(blob);
-    
+    // Direct download from GitHub
     const link = document.createElement('a');
-    link.href = blobUrl;
+    link.href = pathway.url;
     link.download = pathway.name;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    
-    // Clean up blob URL after a short delay
-    setTimeout(() => URL.revokeObjectURL(blobUrl), 100);
 }
 
 async function renamePathway(index) {
-    if (!isAuthenticated) {
-        alert('You must be authenticated to rename documents.');
-        handleAdminLogin();
-        return;
-    }
-    
     const pathway = pathways[index];
     if (!pathway) return;
     
-    const newName = prompt(`Rename "${pathway.name}" to:`, pathway.name);
+    const currentName = pathway.displayName || pathway.name;
+    const newName = prompt(`Rename "${currentName}" to:`, currentName);
     
     if (!newName || newName.trim() === '') {
         return; // User cancelled or entered empty name
     }
     
     const trimmedName = newName.trim();
-    if (trimmedName === pathway.name) {
+    if (trimmedName === currentName) {
         return; // Name unchanged
     }
     
-    try {
-        // Update pathway name
-        pathway.name = trimmedName;
-        
-        // Save to IndexedDB
-        await savePathway(pathway);
-        
-        // Re-render to show updated name (preserve current search filter)
-        const searchInput = document.getElementById('pathwaySearch');
-        const currentFilter = searchInput ? searchInput.value : '';
-        renderPathways(currentFilter);
-    } catch (error) {
-        alert('Error renaming document: ' + error.message);
-        console.error('Rename error:', error);
+    // Update custom display name in memory
+    if (!customDisplayNames.pathways) {
+        customDisplayNames.pathways = {};
     }
+    customDisplayNames.pathways[pathway.file] = trimmedName;
+    
+    // Update the pathway's display name
+    pathway.displayName = trimmedName;
+    
+    // Show updated JSON for user to copy
+    const updatedJSON = generateCustomNamesJSON();
+    const modal = document.createElement('div');
+    modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:10000;display:flex;align-items:center;justify-content:center;';
+    modal.innerHTML = `
+        <div style="background:white;padding:30px;border-radius:12px;max-width:600px;max-height:80vh;overflow:auto;">
+            <h3 style="margin-top:0;color:#667eea;">Update custom-display-names.json</h3>
+            <p>Copy this JSON and update <code>documents/custom-display-names.json</code> in your repository:</p>
+            <textarea readonly style="width:100%;height:200px;font-family:monospace;font-size:12px;padding:10px;border:2px solid #ddd;border-radius:6px;">${updatedJSON}</textarea>
+            <div style="margin-top:15px;display:flex;gap:10px;justify-content:flex-end;">
+                <button onclick="this.closest('div[style*=\"position:fixed\"]').remove();navigator.clipboard.writeText(\`${updatedJSON.replace(/`/g, '\\`')}\`);alert('Copied to clipboard!');" style="padding:10px 20px;background:#667eea;color:white;border:none;border-radius:6px;cursor:pointer;">Copy & Close</button>
+                <button onclick="this.closest('div[style*=\"position:fixed\"]').remove();" style="padding:10px 20px;background:#718096;color:white;border:none;border-radius:6px;cursor:pointer;">Close</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+    
+    // Also save to localStorage as temporary cache
+    localStorage.setItem('chcCustomDisplayNames', JSON.stringify(customDisplayNames));
+    
+    // Re-render (preserve current search filter)
+    const searchInput = document.getElementById('pathwaySearch');
+    const currentFilter = searchInput ? searchInput.value : '';
+    renderPathways(currentFilter);
 }
 
 async function deletePathway(index) {
-    if (!isAuthenticated) {
-        alert('You must be authenticated to delete documents.');
-        handleAdminLogin();
-        return;
-    }
-    
-    const pathway = pathways[index];
-    if (!pathway) return;
-    
-    if (!confirm(`Are you sure you want to delete "${pathway.name}"?`)) {
-        return;
-    }
-    
-    try {
-        // Delete from IndexedDB
-        await deletePathwayFromDB(pathway.id);
-        
-        // Remove from array
-        pathways.splice(index, 1);
-        renderPathways();
-    } catch (error) {
-        alert('Error deleting document: ' + error.message);
-        console.error('Delete error:', error);
-    }
+    alert('To delete documents, remove them from the pathways-manifest.json file and delete the file from the documents/pathways folder in the repository.');
 }
 
-function checkAuthentication() {
-    // Check sessionStorage for authentication status
-    const authStatus = sessionStorage.getItem('chcAdminAuthenticated');
-    isAuthenticated = authStatus === 'true';
-    updateAuthUI();
-}
-
-function updateAuthUI() {
-    const loginBtn = document.getElementById('adminLoginBtn');
-    const logoutBtn = document.getElementById('adminLogoutBtn');
-    const uploadBtn = document.getElementById('uploadPathwayBtn');
-    
-    if (isAuthenticated) {
-        if (loginBtn) loginBtn.style.display = 'none';
-        if (logoutBtn) logoutBtn.style.display = 'block';
-        if (uploadBtn) uploadBtn.style.display = 'block';
-    } else {
-        if (loginBtn) loginBtn.style.display = 'block';
-        if (logoutBtn) logoutBtn.style.display = 'none';
-        if (uploadBtn) uploadBtn.style.display = 'none';
-    }
-}
-
-function handleAdminLogin() {
-    const password = prompt('Enter admin password to upload documents:');
-    if (password === ADMIN_PASSWORD) {
-        isAuthenticated = true;
-        sessionStorage.setItem('chcAdminAuthenticated', 'true');
-        updateAuthUI();
-        // Re-render pathways to show admin buttons
-        const searchInput = document.getElementById('pathwaySearch');
-        const currentFilter = searchInput ? searchInput.value : '';
-        renderPathways(currentFilter);
-        alert('Authentication successful! You can now upload, rename, and delete documents.');
-    } else if (password !== null) {
-        alert('Incorrect password. Access denied.');
-    }
-}
-
-function handleAdminLogout() {
-    if (confirm('Are you sure you want to logout?')) {
-        isAuthenticated = false;
-        sessionStorage.removeItem('chcAdminAuthenticated');
-        updateAuthUI();
-        // Re-render pathways to hide admin buttons
-        const searchInput = document.getElementById('pathwaySearch');
-        const currentFilter = searchInput ? searchInput.value : '';
-        renderPathways(currentFilter);
-    }
-}
-
-function handleUploadClick() {
-    console.log('Upload button clicked, authenticated:', isAuthenticated);
-    
-    if (!isAuthenticated) {
-        handleAdminLogin();
-        // After login, check if we should proceed
-        if (!isAuthenticated) {
-            return;
-        }
-    }
-    
-    // If authenticated, trigger file input
-    const fileInput = document.getElementById('pathwayFileInput');
-    if (fileInput) {
-        console.log('Clicking file input');
-        fileInput.click();
-    } else {
-        console.error('File input not found!');
-        alert('Error: File upload input not found. Please refresh the page.');
-    }
-}
 
 async function initializePathways() {
-    // Initialize IndexedDB first
-    try {
-        await initDB();
-    } catch (error) {
-        console.error('Failed to initialize IndexedDB:', error);
-        alert('Warning: Could not initialize database. Some features may not work.');
-    }
-    
     await loadPathways();
-    checkAuthentication();
-    
-    // File upload handler
-    const fileInput = document.getElementById('pathwayFileInput');
-    if (fileInput) {
-        fileInput.addEventListener('change', function(e) {
-            console.log('File input changed, files:', e.target.files);
-            
-            if (!isAuthenticated) {
-                alert('You must be authenticated to upload documents.');
-                e.target.value = '';
-                return;
-            }
-            
-            if (e.target.files && e.target.files.length > 0) {
-                console.log('Processing', e.target.files.length, 'file(s)');
-                handleFileUpload(e.target.files);
-                // Reset input so same file can be uploaded again
-                e.target.value = '';
-            } else {
-                console.log('No files selected');
-            }
-        });
-    } else {
-        console.error('File input element not found!');
-    }
     
     // Search handler
     const searchInput = document.getElementById('pathwaySearch');
@@ -1458,18 +1318,6 @@ async function initializePathways() {
             renderPathways(e.target.value);
         });
     }
-    
-    // Login/Logout button handlers
-    const loginBtn = document.getElementById('adminLoginBtn');
-    const logoutBtn = document.getElementById('adminLogoutBtn');
-    
-    if (loginBtn) {
-        loginBtn.addEventListener('click', handleAdminLogin);
-    }
-    
-    if (logoutBtn) {
-        logoutBtn.addEventListener('click', handleAdminLogout);
-    }
 }
 
 // Make functions available globally
@@ -1477,7 +1325,6 @@ window.viewPathway = viewPathway;
 window.downloadPathway = downloadPathway;
 window.renamePathway = renamePathway;
 window.deletePathway = deletePathway;
-window.handleUploadClick = handleUploadClick;
 
 // ==================== Physical Therapy System ====================
 
@@ -1485,9 +1332,9 @@ const PT_STORE_NAME = 'ptGuides';
 const PT_RECOMMENDATIONS_STORE = 'ptRecommendations';
 
 let ptGuides = [];
-let ptRecommendations = [];
-let ptIsAuthenticated = false;
-let editingRecommendationId = null;
+
+// Store custom display names (admin-only feature)
+let customDisplayNames = {};
 
 // Initialize PT DB stores
 function initPTDB() {
@@ -1546,27 +1393,31 @@ function initPTStores() {
 
 async function loadPTGuides() {
     try {
-        if (!db) {
-            await initDB();
-        }
-        if (!db.objectStoreNames.contains(PT_STORE_NAME)) {
-            await initPTDB();
+        // Load manifest from GitHub
+        const manifestUrl = `${GITHUB_BASE_URL}/documents/pt-manifest.json`;
+        console.log('Loading PT guides from:', manifestUrl);
+        
+        const response = await fetch(manifestUrl);
+        if (!response.ok) {
+            throw new Error(`Failed to load PT manifest: ${response.statusText}`);
         }
         
-        return new Promise((resolve, reject) => {
-            const transaction = db.transaction([PT_STORE_NAME], 'readonly');
-            const store = transaction.objectStore(PT_STORE_NAME);
-            const request = store.getAll();
-            
-            request.onsuccess = () => {
-                ptGuides = request.result || [];
-                console.log('Loaded', ptGuides.length, 'PT guides from IndexedDB');
-                renderPTGuides();
-                resolve(ptGuides);
+        const manifest = await response.json();
+        await loadCustomDisplayNames(); // Load custom names from GitHub
+        ptGuides = manifest.map((item, index) => {
+            return {
+                id: index,
+                file: item.file,
+                name: item.name,
+                displayName: getDisplayName(item.file, item.name, 'pt'),
+                fileType: item.type || getFileExtension(item.name),
+                url: `${GITHUB_BASE_URL}/documents/${item.file}`
             };
-            
-            request.onerror = () => reject(request.error);
         });
+        
+        console.log('Loaded', ptGuides.length, 'PT guides from GitHub');
+        renderPTGuides();
+        return ptGuides;
     } catch (error) {
         console.error('Error loading PT guides:', error);
         ptGuides = [];
@@ -1574,34 +1425,46 @@ async function loadPTGuides() {
     }
 }
 
-async function loadPTRecommendations() {
+// Load custom display names from localStorage
+// Load custom display names from GitHub
+async function loadCustomDisplayNames() {
     try {
-        if (!db) {
-            await initDB();
-        }
-        if (!db.objectStoreNames.contains(PT_RECOMMENDATIONS_STORE)) {
-            await initPTDB();
-        }
+        const namesUrl = `${GITHUB_BASE_URL}/documents/custom-display-names.json`;
+        const response = await fetch(namesUrl);
         
-        return new Promise((resolve, reject) => {
-            const transaction = db.transaction([PT_RECOMMENDATIONS_STORE], 'readonly');
-            const store = transaction.objectStore(PT_RECOMMENDATIONS_STORE);
-            const request = store.getAll();
-            
-            request.onsuccess = () => {
-                ptRecommendations = request.result || [];
-                console.log('Loaded', ptRecommendations.length, 'PT recommendations from IndexedDB');
-                renderPTRecommendations();
-                resolve(ptRecommendations);
-            };
-            
-            request.onerror = () => reject(request.error);
-        });
+        if (response.ok) {
+            const data = await response.json();
+            customDisplayNames = data;
+            console.log('Loaded custom display names from GitHub');
+        } else {
+            console.log('Custom display names file not found, using defaults');
+            customDisplayNames = { pathways: {}, ptGuides: {} };
+        }
     } catch (error) {
-        console.error('Error loading PT recommendations:', error);
-        ptRecommendations = [];
-        renderPTRecommendations();
+        console.error('Error loading custom display names:', error);
+        // Fallback to localStorage if GitHub load fails
+        const saved = localStorage.getItem('chcCustomDisplayNames');
+        if (saved) {
+            try {
+                const parsed = JSON.parse(saved);
+                customDisplayNames = parsed;
+            } catch (e) {
+                customDisplayNames = { pathways: {}, ptGuides: {} };
+            }
+        }
     }
+}
+
+// Get display name for a file (custom name or original)
+function getDisplayName(filePath, originalName, type) {
+    // filePath is like "pathways/file.pdf" or "pt-guides/file.pdf"
+    const category = type === 'pathway' ? 'pathways' : 'ptGuides';
+    return customDisplayNames[category]?.[filePath] || originalName;
+}
+
+// Generate updated JSON content for the custom-display-names.json file
+function generateCustomNamesJSON() {
+    return JSON.stringify(customDisplayNames, null, 2);
 }
 
 async function savePTGuide(guide) {
@@ -1722,14 +1585,10 @@ function renderPTGuides(filter = '') {
                     <div class="pathway-list-item" onclick="viewPTGuide(${actualIndex})">
                         <div class="pathway-list-icon">${fileIcon}</div>
                         <div class="pathway-list-info">
-                            <div class="pathway-list-name">${escapeHtml(guide.name)}</div>
+                            <div class="pathway-list-name">${escapeHtml(guide.displayName || guide.name)}</div>
                         </div>
                         <div class="pathway-list-actions" onclick="event.stopPropagation()">
                             <button class="btn btn-secondary btn-small" onclick="downloadPTGuide(${actualIndex})">Download</button>
-                            ${ptIsAuthenticated ? `
-                                <button class="btn btn-primary btn-small" onclick="renamePTGuide(${actualIndex})">Rename</button>
-                                <button class="btn btn-danger btn-small" onclick="deletePTGuide(${actualIndex})">Delete</button>
-                            ` : ''}
                         </div>
                     </div>
                 `;
@@ -1738,38 +1597,6 @@ function renderPTGuides(filter = '') {
     `;
 }
 
-function renderPTRecommendations() {
-    const container = document.getElementById('ptRecommendationsList');
-    const section = document.getElementById('ptRecommendationsSection');
-    if (!container) return;
-    
-    if (ptRecommendations.length === 0) {
-        section.style.display = 'none';
-        return;
-    }
-    
-    section.style.display = 'block';
-    
-    // Sort alphabetically
-    const sorted = [...ptRecommendations].sort((a, b) => 
-        a.title.toLowerCase().localeCompare(b.title.toLowerCase())
-    );
-    
-    container.innerHTML = sorted.map((rec) => `
-        <div class="pt-recommendation-card">
-            <div class="pt-recommendation-header">
-                <div class="pt-recommendation-title">${escapeHtml(rec.title)}</div>
-                ${ptIsAuthenticated ? `
-                    <div class="pt-recommendation-actions">
-                        <button class="btn btn-primary btn-small" onclick="editRecommendation('${rec.id}')">Edit</button>
-                        <button class="btn btn-danger btn-small" onclick="deletePTRecommendation('${rec.id}')">Delete</button>
-                    </div>
-                ` : ''}
-            </div>
-            <div class="pt-recommendation-content">${escapeHtml(rec.content)}</div>
-        </div>
-    `).join('');
-}
 
 async function handlePTFileUpload(files) {
     if (!files || files.length === 0) return;
@@ -1826,16 +1653,14 @@ function viewPTGuide(index) {
     const guide = ptGuides[index];
     if (!guide) return;
     
-    const blob = new Blob([guide.data], { type: guide.mimeType || 'application/octet-stream' });
-    const blobUrl = URL.createObjectURL(blob);
+    // Open document from GitHub URL
     const newWindow = window.open();
-    
-    if (guide.mimeType === 'application/pdf' || guide.fileType === 'pdf') {
+    if (guide.fileType === 'pdf') {
         newWindow.document.write(`
             <html>
                 <head><title>${escapeHtml(guide.name)}</title></head>
                 <body style="margin:0;padding:0;">
-                    <embed src="${blobUrl}" type="application/pdf" width="100%" height="100%" style="position:absolute;top:0;left:0;width:100%;height:100vh;" />
+                    <embed src="${guide.url}" type="application/pdf" width="100%" height="100%" style="position:absolute;top:0;left:0;width:100%;height:100vh;" />
                 </body>
             </html>
         `);
@@ -1846,255 +1671,86 @@ function viewPTGuide(index) {
                 <body style="margin:20px;font-family:Arial;">
                     <h2>${escapeHtml(guide.name)}</h2>
                     <p>This file type cannot be displayed in the browser. Please download it to view.</p>
-                    <button onclick="window.location.href='${blobUrl}'" download="${escapeHtml(guide.name)}" style="padding:10px 20px;background:#667eea;color:white;border:none;border-radius:6px;cursor:pointer;">
+                    <button onclick="window.location.href='${guide.url}'" download="${escapeHtml(guide.name)}" style="padding:10px 20px;background:#667eea;color:white;border:none;border-radius:6px;cursor:pointer;">
                         Download File
                     </button>
                 </body>
             </html>
         `);
     }
-    
-    newWindow.addEventListener('beforeunload', () => {
-        URL.revokeObjectURL(blobUrl);
-    });
 }
 
 function downloadPTGuide(index) {
     const guide = ptGuides[index];
     if (!guide) return;
     
-    const blob = new Blob([guide.data], { type: guide.mimeType || 'application/octet-stream' });
-    const blobUrl = URL.createObjectURL(blob);
+    // Direct download from GitHub
     const link = document.createElement('a');
-    link.href = blobUrl;
+    link.href = guide.url;
     link.download = guide.name;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    setTimeout(() => URL.revokeObjectURL(blobUrl), 100);
 }
 
 async function renamePTGuide(index) {
-    if (!ptIsAuthenticated) {
-        alert('You must be authenticated to rename documents.');
-        handlePTAdminLogin();
-        return;
-    }
-    
     const guide = ptGuides[index];
     if (!guide) return;
     
-    const newName = prompt(`Rename "${guide.name}" to:`, guide.name);
-    if (!newName || newName.trim() === '' || newName.trim() === guide.name) return;
+    const currentName = guide.displayName || guide.name;
+    const newName = prompt(`Rename "${currentName}" to:`, currentName);
     
-    try {
-        guide.name = newName.trim();
-        await savePTGuide(guide);
-        const searchInput = document.getElementById('ptSearch');
-        renderPTGuides(searchInput ? searchInput.value : '');
-    } catch (error) {
-        alert('Error renaming document: ' + error.message);
+    if (!newName || newName.trim() === '') {
+        return; // User cancelled or entered empty name
     }
+    
+    const trimmedName = newName.trim();
+    if (trimmedName === currentName) {
+        return; // Name unchanged
+    }
+    
+    // Update custom display name in memory
+    if (!customDisplayNames.ptGuides) {
+        customDisplayNames.ptGuides = {};
+    }
+    customDisplayNames.ptGuides[guide.file] = trimmedName;
+    
+    // Update the guide's display name
+    guide.displayName = trimmedName;
+    
+    // Show updated JSON for user to copy
+    const updatedJSON = generateCustomNamesJSON();
+    const modal = document.createElement('div');
+    modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:10000;display:flex;align-items:center;justify-content:center;';
+    modal.innerHTML = `
+        <div style="background:white;padding:30px;border-radius:12px;max-width:600px;max-height:80vh;overflow:auto;">
+            <h3 style="margin-top:0;color:#667eea;">Update custom-display-names.json</h3>
+            <p>Copy this JSON and update <code>documents/custom-display-names.json</code> in your repository:</p>
+            <textarea readonly style="width:100%;height:200px;font-family:monospace;font-size:12px;padding:10px;border:2px solid #ddd;border-radius:6px;">${updatedJSON}</textarea>
+            <div style="margin-top:15px;display:flex;gap:10px;justify-content:flex-end;">
+                <button onclick="this.closest('div[style*=\"position:fixed\"]').remove();navigator.clipboard.writeText(\`${updatedJSON.replace(/`/g, '\\`')}\`);alert('Copied to clipboard!');" style="padding:10px 20px;background:#667eea;color:white;border:none;border-radius:6px;cursor:pointer;">Copy & Close</button>
+                <button onclick="this.closest('div[style*=\"position:fixed\"]').remove();" style="padding:10px 20px;background:#718096;color:white;border:none;border-radius:6px;cursor:pointer;">Close</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+    
+    // Also save to localStorage as temporary cache
+    localStorage.setItem('chcCustomDisplayNames', JSON.stringify(customDisplayNames));
+    
+    // Re-render
+    const searchInput = document.getElementById('ptSearch');
+    renderPTGuides(searchInput ? searchInput.value : '');
 }
 
 async function deletePTGuide(index) {
-    if (!ptIsAuthenticated) {
-        alert('You must be authenticated to delete documents.');
-        handlePTAdminLogin();
-        return;
-    }
-    
-    const guide = ptGuides[index];
-    if (!guide) return;
-    
-    if (!confirm(`Are you sure you want to delete "${guide.name}"?`)) return;
-    
-    try {
-        await deletePTGuideFromDB(guide.id);
-        ptGuides.splice(index, 1);
-        renderPTGuides();
-    } catch (error) {
-        alert('Error deleting document: ' + error.message);
-    }
+    alert('To delete documents, remove them from the pt-manifest.json file and delete the file from the documents/pt-guides folder in the repository.');
 }
 
-function checkPTAuthentication() {
-    const authStatus = sessionStorage.getItem('chcPTAdminAuthenticated');
-    ptIsAuthenticated = authStatus === 'true';
-    updatePTAuthUI();
-}
 
-function updatePTAuthUI() {
-    const loginBtn = document.getElementById('ptAdminLoginBtn');
-    const logoutBtn = document.getElementById('ptAdminLogoutBtn');
-    const uploadBtn = document.getElementById('uploadPtBtn');
-    const addRecBtn = document.getElementById('addRecommendationBtn');
-    
-    if (ptIsAuthenticated) {
-        if (loginBtn) loginBtn.style.display = 'none';
-        if (logoutBtn) logoutBtn.style.display = 'block';
-        if (uploadBtn) uploadBtn.style.display = 'block';
-        if (addRecBtn) addRecBtn.style.display = 'block';
-    } else {
-        if (loginBtn) loginBtn.style.display = 'block';
-        if (logoutBtn) logoutBtn.style.display = 'none';
-        if (uploadBtn) uploadBtn.style.display = 'none';
-        if (addRecBtn) addRecBtn.style.display = 'none';
-    }
-}
-
-function handlePTAdminLogin() {
-    const password = prompt('Enter admin password to manage PT guides:');
-    if (password === ADMIN_PASSWORD) {
-        ptIsAuthenticated = true;
-        sessionStorage.setItem('chcPTAdminAuthenticated', 'true');
-        updatePTAuthUI();
-        const searchInput = document.getElementById('ptSearch');
-        renderPTGuides(searchInput ? searchInput.value : '');
-        renderPTRecommendations();
-        alert('Authentication successful! You can now manage PT guides and recommendations.');
-    } else if (password !== null) {
-        alert('Incorrect password. Access denied.');
-    }
-}
-
-function handlePTAdminLogout() {
-    if (confirm('Are you sure you want to logout?')) {
-        ptIsAuthenticated = false;
-        sessionStorage.removeItem('chcPTAdminAuthenticated');
-        updatePTAuthUI();
-        const searchInput = document.getElementById('ptSearch');
-        renderPTGuides(searchInput ? searchInput.value : '');
-        renderPTRecommendations();
-    }
-}
-
-function handlePtUploadClick() {
-    if (!ptIsAuthenticated) {
-        handlePTAdminLogin();
-        if (!ptIsAuthenticated) return;
-    }
-    
-    const fileInput = document.getElementById('ptFileInput');
-    if (fileInput) fileInput.click();
-}
-
-function showAddRecommendationModal() {
-    if (!ptIsAuthenticated) {
-        handlePTAdminLogin();
-        return;
-    }
-    
-    editingRecommendationId = null;
-    document.getElementById('recommendationTitle').value = '';
-    document.getElementById('recommendationContent').value = '';
-    document.getElementById('recommendationModal').style.display = 'block';
-}
-
-function closeRecommendationModal() {
-    document.getElementById('recommendationModal').style.display = 'none';
-    editingRecommendationId = null;
-}
-
-function editRecommendation(id) {
-    if (!ptIsAuthenticated) {
-        handlePTAdminLogin();
-        return;
-    }
-    
-    const rec = ptRecommendations.find(r => r.id === id);
-    if (!rec) return;
-    
-    editingRecommendationId = id;
-    document.getElementById('recommendationTitle').value = rec.title;
-    document.getElementById('recommendationContent').value = rec.content;
-    document.getElementById('recommendationModal').style.display = 'block';
-}
-
-async function saveRecommendation() {
-    const title = document.getElementById('recommendationTitle').value.trim();
-    const content = document.getElementById('recommendationContent').value.trim();
-    
-    if (!title || !content) {
-        alert('Please fill in both title and content.');
-        return;
-    }
-    
-    try {
-        const recommendation = {
-            id: editingRecommendationId || Date.now() + Math.random(),
-            title: title,
-            content: content,
-            createdDate: editingRecommendationId 
-                ? ptRecommendations.find(r => r.id === editingRecommendationId)?.createdDate || new Date().toISOString()
-                : new Date().toISOString(),
-            updatedDate: new Date().toISOString()
-        };
-        
-        await savePTRecommendation(recommendation);
-        
-        if (editingRecommendationId) {
-            const index = ptRecommendations.findIndex(r => r.id === editingRecommendationId);
-            if (index !== -1) {
-                ptRecommendations[index] = recommendation;
-            }
-        } else {
-            ptRecommendations.push(recommendation);
-        }
-        
-        renderPTRecommendations();
-        closeRecommendationModal();
-    } catch (error) {
-        alert('Error saving recommendation: ' + error.message);
-    }
-}
-
-async function deletePTRecommendation(id) {
-    if (!ptIsAuthenticated) {
-        handlePTAdminLogin();
-        return;
-    }
-    
-    const rec = ptRecommendations.find(r => r.id === id);
-    if (!rec) return;
-    
-    if (!confirm(`Are you sure you want to delete "${rec.title}"?`)) return;
-    
-    try {
-        await deletePTRecommendationFromDB(id);
-        ptRecommendations = ptRecommendations.filter(r => r.id !== id);
-        renderPTRecommendations();
-    } catch (error) {
-        alert('Error deleting recommendation: ' + error.message);
-    }
-}
 
 async function initializePT() {
-    try {
-        await initDB();
-        await initPTDB();
-    } catch (error) {
-        console.error('Failed to initialize PT DB:', error);
-    }
-    
     await loadPTGuides();
-    await loadPTRecommendations();
-    checkPTAuthentication();
-    
-    const fileInput = document.getElementById('ptFileInput');
-    if (fileInput) {
-        fileInput.addEventListener('change', function(e) {
-            if (!ptIsAuthenticated) {
-                alert('You must be authenticated to upload documents.');
-                e.target.value = '';
-                return;
-            }
-            if (e.target.files && e.target.files.length > 0) {
-                handlePTFileUpload(e.target.files);
-                e.target.value = '';
-            }
-        });
-    }
     
     const searchInput = document.getElementById('ptSearch');
     if (searchInput) {
@@ -2102,11 +1758,6 @@ async function initializePT() {
             renderPTGuides(e.target.value);
         });
     }
-    
-    const loginBtn = document.getElementById('ptAdminLoginBtn');
-    const logoutBtn = document.getElementById('ptAdminLogoutBtn');
-    if (loginBtn) loginBtn.addEventListener('click', handlePTAdminLogin);
-    if (logoutBtn) logoutBtn.addEventListener('click', handlePTAdminLogout);
 }
 
 // Make PT functions available globally
@@ -2114,11 +1765,6 @@ window.viewPTGuide = viewPTGuide;
 window.downloadPTGuide = downloadPTGuide;
 window.renamePTGuide = renamePTGuide;
 window.deletePTGuide = deletePTGuide;
-window.handlePtUploadClick = handlePtUploadClick;
-window.showAddRecommendationModal = showAddRecommendationModal;
-window.closeRecommendationModal = closeRecommendationModal;
-window.editRecommendation = editRecommendation;
-window.saveRecommendation = saveRecommendation;
-window.deletePTRecommendation = deletePTRecommendation;
+
 
 
