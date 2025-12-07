@@ -3,6 +3,11 @@
     "name": "MDM.pdf",
     "file": "pathways/MDM.pdf",
     "type": "pdf"
+  },
+  {
+    "name": "Pregnancy WI.docx.pdf",
+    "file": "pathways/Pregnancy WI.docx.pdf",
+    "type": "pdf"
   }
 ]
 
