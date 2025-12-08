@@ -8,13 +8,13 @@ let shiftAssignments = {
 
 // Hard-coded base providers
 const BASE_PROVIDERS = [
-    { id: 1, name: 'Ryan', patientsPerHour: 2, submitted: true, isBase: true },
-    { id: 2, name: 'Kristy', patientsPerHour: 1.8, submitted: true, isBase: true },
-    { id: 3, name: 'Mikaela', patientsPerHour: 2, submitted: true, isBase: true },
-    { id: 4, name: 'Dan', patientsPerHour: 1.8, submitted: true, isBase: true },
-    { id: 5, name: 'Johny', patientsPerHour: 1.9, submitted: true, isBase: true },
+    { id: 1, name: 'Ryan', patientsPerHour: 2.2, submitted: true, isBase: true },
+    { id: 2, name: 'Kristy', patientsPerHour: 2.2, submitted: true, isBase: true },
+    { id: 3, name: 'Mikaela', patientsPerHour: 2.2, submitted: true, isBase: true },
+    { id: 4, name: 'Dan', patientsPerHour: 2.2, submitted: true, isBase: true },
+    { id: 5, name: 'Johny', patientsPerHour: 2.2, submitted: true, isBase: true },
     { id: 6, name: 'Nicole', patientsPerHour: 2.2, submitted: true, isBase: true },
-    { id: 7, name: 'Lauren', patientsPerHour: 2, submitted: true, isBase: true }
+    { id: 7, name: 'Lauren', patientsPerHour: 2.2, submitted: true, isBase: true }
 ];
 
 // Get the desired order for providers based on BASE_PROVIDERS
