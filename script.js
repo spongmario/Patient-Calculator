@@ -14,7 +14,9 @@ const BASE_PROVIDERS = [
     { id: 4, name: 'Dan', patientsPerHour: 2.2, submitted: true, isBase: true },
     { id: 5, name: 'Johny', patientsPerHour: 2.2, submitted: true, isBase: true },
     { id: 6, name: 'Nicole', patientsPerHour: 2.2, submitted: true, isBase: true },
-    { id: 7, name: 'Lauren', patientsPerHour: 2.2, submitted: true, isBase: true }
+    { id: 7, name: 'Lauren', patientsPerHour: 2.2, submitted: true, isBase: true },
+    { id: 8, name: 'Nhi', patientsPerHour: 2.2, submitted: true, isBase: true },
+    { id: 9, name: 'Clare', patientsPerHour: 2.2, submitted: true, isBase: true }
 ];
 
 // Get the desired order for providers based on BASE_PROVIDERS
